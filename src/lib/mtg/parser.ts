@@ -2,7 +2,7 @@ import JSON5 from "json5"
 
 import { EMPTY_COLOR_COUNTS } from "@/lib/mtg/constants"
 import { formatCardName, getCardNameAliases, normalizeCardName } from "@/lib/mtg/normalize"
-import { COLOR_SYMBOLS, type PoolEntry, type RatingCard, type RatingFileParseResult, type RatingMergeResult } from "@/lib/mtg/types"
+import { COLOR_SYMBOLS, type CardRole, type PoolEntry, type RatingCard, type RatingFileParseResult, type RatingMergeResult } from "@/lib/mtg/types"
 
 type RawRatingCard = {
   name?: string
@@ -37,12 +37,53 @@ function toColorCounts(rawColors: number[] | undefined) {
   return counts
 }
 
+function deriveCardRole(
+  type: string,
+  cmc: number,
+  rawColors: ReturnType<typeof toColorCounts>,
+  primaryCost: string,
+  alternateCost: string | undefined,
+): CardRole {
+  const colorCounts = COLOR_SYMBOLS.map((symbol) => rawColors[symbol])
+  const colorCount = colorCounts.filter((count) => count > 0).length
+  const totalColoredPips = colorCounts.reduce((sum, count) => sum + count, 0)
+  const maxSingleColorPip = Math.max(0, ...colorCounts)
+  const lowerType = type.toLowerCase()
+  const isCreature = lowerType.includes("creature")
+  const isInteraction =
+    /instant|sorcery|spell/.test(lowerType) ||
+    (!isCreature && /destroy|counter|fight|damage|bounce/.test(primaryCost.toLowerCase()))
+  const isConditionalCard =
+    maxSingleColorPip >= 2 || cmc >= 6 || /x/i.test(primaryCost) || /x/i.test(alternateCost ?? "")
+  const isFixing =
+    /land/.test(lowerType) &&
+    /[WUBRG]{2,}/.test(alternateCost ?? "") &&
+    totalColoredPips === 0
+
+  return {
+    colorCount,
+    maxSingleColorPip,
+    totalColoredPips,
+    isCheapCreature: isCreature && cmc <= 3,
+    isExpensiveFinisher: isCreature && cmc >= 5,
+    isInteraction,
+    isConditionalCard,
+    isColorlessPlayable: totalColoredPips === 0 && !/land/.test(lowerType),
+    isFixing,
+  }
+}
+
 function parseRatingCard(rawCard: RawRatingCard): RatingCard {
   const displayName = formatCardName(rawCard.name ?? "")
   const normalizedName = normalizeCardName(displayName)
   const aliases = getCardNameAliases(displayName)
   const rawColors = toColorCounts(rawCard.colors)
   const type = rawCard.type?.trim() ?? "Unknown"
+  const primaryCost = String(rawCard.castingcost1 ?? "")
+  const alternateCost =
+    rawCard.castingcost2 && rawCard.castingcost2 !== "none"
+      ? rawCard.castingcost2
+      : undefined
 
   return {
     name: rawCard.name ?? displayName,
@@ -55,16 +96,14 @@ function parseRatingCard(rawCard: RawRatingCard): RatingCard {
     cmc: Number(rawCard.cmc ?? 0),
     rawColors,
     alternateRawColors: undefined,
-    alternateCost:
-      rawCard.castingcost2 && rawCard.castingcost2 !== "none"
-        ? rawCard.castingcost2
-        : undefined,
-    primaryCost: String(rawCard.castingcost1 ?? ""),
+    alternateCost,
+    primaryCost,
     image: rawCard.image,
     isCreature: /creature/i.test(type),
     isLand: /land/i.test(type),
     isInstantLike: /instant|spell|sorcery/i.test(type),
     normalizedName,
+    role: deriveCardRole(type, Number(rawCard.cmc ?? 0), rawColors, primaryCost, alternateCost),
   }
 }
 

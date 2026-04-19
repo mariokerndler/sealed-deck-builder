@@ -9,6 +9,18 @@ export type DeckColorIdentity = {
   splash?: ColorSymbol
 }
 
+export type CardRole = {
+  colorCount: number
+  maxSingleColorPip: number
+  totalColoredPips: number
+  isCheapCreature: boolean
+  isExpensiveFinisher: boolean
+  isInteraction: boolean
+  isConditionalCard: boolean
+  isColorlessPlayable: boolean
+  isFixing: boolean
+}
+
 export type RatingCard = {
   name: string
   displayName: string
@@ -27,6 +39,7 @@ export type RatingCard = {
   isLand: boolean
   isInstantLike: boolean
   normalizedName: string
+  role: CardRole
 }
 
 export type RatingFileParseResult = {
@@ -79,19 +92,41 @@ export type DeckMetrics = {
   averageCmc: number
   manaStability: number
   curveScore: number
+  earlyBoardPresence: number
+  removalDensity: number
+  splashStrain: number
+  manaSourceSufficiency: number
+  topEndLoad: number
+  nonCreatureSaturation: number
+}
+
+export type ScoreBreakdown = {
+  cardQuality: number
+  manaConsistency: number
+  earlyGameStability: number
+  creatureStructure: number
+  interactionQuality: number
+  topEndBurden: number
+  colorDepthResilience: number
+  deckCoherence: number
+  penalties: number
+  total: number
 }
 
 export type RankedDeckResult = {
   id: string
   colors: DeckColorIdentity
   mainDeck: DeckCard[]
+  fullDeck: DeckCard[]
   basicLands: ColorCountMap
   spellCount: number
   landCount: number
+  totalCardCount: number
   totalScore: number
   explanation: string
   diagnostics: string[]
   metrics: DeckMetrics
+  scoreBreakdown: ScoreBreakdown
 }
 
 export type SearchConfig = {
@@ -101,4 +136,6 @@ export type SearchConfig = {
   includeMonoColor: boolean
   allowSplash: boolean
   maxResults: number
+  candidateLimit: number
+  variantsPerCandidate: number
 }

@@ -1,6 +1,7 @@
 import { startTransition, useMemo, useState, type ChangeEvent } from "react"
 import {
   CheckCircle2Icon,
+  CopyIcon,
   FileCode2Icon,
   InfoIcon,
   Layers3Icon,
@@ -94,6 +95,26 @@ function formatColors(deck: RankedDeckResult) {
   return deck.colors.splash ? [...names, `${COLOR_NAMES[deck.colors.splash]} splash`] : names
 }
 
+function formatDeckListForCopy(deck: RankedDeckResult) {
+  const lines = [
+    `#${deck.id} - ${formatColors(deck).join(", ")}`,
+    `Score: ${deck.totalScore.toFixed(2)}`,
+    `Cards: ${deck.totalCardCount}`,
+    "",
+    "Main Deck",
+    ...deck.fullDeck.map((entry) => `${entry.quantity} ${entry.card.displayName}`),
+  ]
+
+  return lines.join("\n")
+}
+
+function formatManaBaseForCopy(deck: RankedDeckResult) {
+  return [
+    `${formatColors(deck).join(", ")} mana base`,
+    ...describeManaBase(deck.basicLands),
+  ].join("\n")
+}
+
 function App() {
   const [poolText, setPoolText] = useState(SAMPLE_POOL)
   const [ratingFiles, setRatingFiles] = useState<RatingFileParseResult[]>([])
@@ -101,6 +122,7 @@ function App() {
   const [results, setResults] = useState<RankedDeckResult[]>([])
   const [missingCards, setMissingCards] = useState<string[]>([])
   const [isEvaluating, setIsEvaluating] = useState(false)
+  const [copiedDeckId, setCopiedDeckId] = useState<string | null>(null)
 
   const mergedRatings = useMemo(() => mergeRatingFiles(ratingFiles), [ratingFiles])
   const parsedPool = useMemo(() => parsePoolText(poolText), [poolText])
@@ -161,6 +183,14 @@ function App() {
     setMissingCards([])
   }
 
+  async function copyText(text: string, deckId: string) {
+    await navigator.clipboard.writeText(text)
+    setCopiedDeckId(deckId)
+    window.setTimeout(() => {
+      setCopiedDeckId((current) => (current === deckId ? null : current))
+    }, 1800)
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#f4efe4_0%,#f8f5ee_36%,#f5f3ec_100%)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-6 md:px-6 lg:px-8">
@@ -174,7 +204,7 @@ function App() {
                 Top 5 decks
               </Badge>
               <Badge variant="outline" className="border-amber-400/40 bg-amber-300/10 text-amber-100">
-                Basic lands only
+                40-card output
               </Badge>
             </div>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -407,22 +437,42 @@ function App() {
                                 {deck.explanation}
                               </CardDescription>
                             </div>
-                            <div className="grid min-w-[15rem] gap-2 rounded-xl border border-stone-200 bg-white p-3 text-sm">
-                              <div className="flex items-center justify-between">
-                                <span className="text-stone-500">Creatures</span>
-                                <span className="font-medium">{deck.metrics.creatureCount}</span>
+                            <div className="flex min-w-[15rem] flex-col gap-3">
+                              <div className="grid gap-2 rounded-xl border border-stone-200 bg-white p-3 text-sm">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-stone-500">Creatures</span>
+                                  <span className="font-medium">{deck.metrics.creatureCount}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-stone-500">Interaction</span>
+                                  <span className="font-medium">{deck.metrics.interactionCount}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-stone-500">Cheap plays</span>
+                                  <span className="font-medium">{deck.metrics.cheapPlays}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-stone-500">Avg. mana value</span>
+                                  <span className="font-medium">{deck.metrics.averageCmc.toFixed(1)}</span>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-stone-500">Interaction</span>
-                                <span className="font-medium">{deck.metrics.interactionCount}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-stone-500">Cheap plays</span>
-                                <span className="font-medium">{deck.metrics.cheapPlays}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-stone-500">Avg. mana value</span>
-                                <span className="font-medium">{deck.metrics.averageCmc.toFixed(1)}</span>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => copyText(formatDeckListForCopy(deck), `${deck.id}-full`)}
+                                >
+                                  <CopyIcon data-icon="inline-start" />
+                                  {copiedDeckId === `${deck.id}-full` ? "Copied deck" : "Copy deck"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => copyText(formatManaBaseForCopy(deck), `${deck.id}-mana`)}
+                                >
+                                  <CopyIcon data-icon="inline-start" />
+                                  {copiedDeckId === `${deck.id}-mana` ? "Copied mana" : "Copy mana"}
+                                </Button>
                               </div>
                             </div>
                           </div>
@@ -446,7 +496,7 @@ function App() {
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {deck.mainDeck.map((entry) => (
+                                  {deck.fullDeck.map((entry) => (
                                     <TableRow key={`${deck.id}-${entry.card.normalizedName}`}>
                                       <TableCell>{entry.quantity}</TableCell>
                                       <TableCell className="font-medium">
@@ -471,7 +521,7 @@ function App() {
                                   ))}
                                 </div>
                                 <p className="text-sm leading-relaxed text-muted-foreground">
-                                  This deck uses {deck.landCount} basic lands to support {formatColors(deck).join(", ")} while keeping the mana as simple as possible for Sealed play.
+                                  This deck uses {deck.landCount} basic lands to support {formatColors(deck).join(", ")}.
                                 </p>
                               </div>
                             </TabsContent>
@@ -497,9 +547,11 @@ function App() {
                         </CardContent>
                         <CardFooter className="bg-stone-50/60">
                           <div className="flex flex-wrap items-center gap-2 text-sm text-stone-600">
-                            <span>Main deck: {deck.spellCount} spells</span>
+                            <span>Deck: {deck.totalCardCount} cards</span>
                             <Separator orientation="vertical" className="h-4" />
-                            <span>Basics: {deck.landCount}</span>
+                            <span>Spells: {deck.spellCount}</span>
+                            <Separator orientation="vertical" className="h-4" />
+                            <span>Lands: {deck.landCount}</span>
                             <Separator orientation="vertical" className="h-4" />
                             <span>Mana stability: {deck.metrics.manaStability.toFixed(1)}</span>
                           </div>

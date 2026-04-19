@@ -34,6 +34,8 @@ describe("rating parser", () => {
     const parsed = parseRatingFileContent(MAIN_FILE, "main.js")
     expect(parsed.cards).toHaveLength(13)
     expect(parsed.cards[0]?.displayName).toBe("Alpha Knight")
+    expect(parsed.cards[0]?.role.colorCount).toBe(1)
+    expect(parsed.cards[0]?.role.isCheapCreature).toBe(true)
   })
 
   it("merges multiple non-overlapping files into one index", () => {
@@ -112,11 +114,123 @@ describe("sealed engine", () => {
     `)
 
     const result = evaluateSealedPool(pool, ratings)
+    const getPoolCountForCard = (normalizedAliases: string[]) =>
+      pool
+        .filter((entry) => entry.inputName !== "Missing Card")
+        .filter((entry) =>
+          normalizedAliases.some((alias) => entry.normalizedAliases.includes(alias)),
+        )
+        .reduce((sum, entry) => sum + entry.quantity, 0)
 
     expect(result.decks.length).toBeGreaterThan(0)
     expect(result.decks[0]?.mainDeck.reduce((sum, card) => sum + card.quantity, 0)).toBe(23)
-    expect(result.decks[0]?.landCount).toBeGreaterThanOrEqual(16)
+    expect(result.decks[0]?.metrics.creatureCount).toBeLessThanOrEqual(23)
+    expect(result.decks[0]?.metrics.interactionCount).toBeLessThanOrEqual(23)
+    expect(result.decks[0]?.metrics.cheapPlays).toBeLessThanOrEqual(23)
+    expect(result.decks[0]?.fullDeck.reduce((sum, card) => sum + card.quantity, 0)).toBe(40)
+    expect(result.decks[0]?.totalCardCount).toBe(40)
+    expect(result.decks[0]?.landCount).toBe(17)
     expect(result.decks[0]?.explanation.length).toBeGreaterThan(20)
+    expect(result.decks[0]?.scoreBreakdown.total).toBe(result.decks[0]?.totalScore)
+    expect(result.decks[0]?.metrics.manaSourceSufficiency).toBeGreaterThan(0)
+    expect(
+      result.decks[0]?.mainDeck.every(
+        (entry) => entry.quantity <= getPoolCountForCard(entry.card.normalizedAliases),
+      ),
+    ).toBe(true)
     expect(result.missingCards).toHaveLength(1)
+  })
+
+  it("rejects obviously bad splashes in shallow pools", () => {
+    const ratings = mergeRatingFiles([
+      parseRatingFileContent(`var SHALLOW = [
+        {name:"Steady Recruit", castingcost1:"1W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.1", cmc:"2", colors:[1,0,0,0,0]},
+        {name:"Shield Drill", castingcost1:"2W", castingcost2:"none", type:"Spell", rarity:"C", myrating:"2.9", cmc:"3", colors:[1,0,0,0,0]},
+        {name:"Thought Snare", castingcost1:"1U", castingcost2:"none", type:"Instant", rarity:"C", myrating:"3.0", cmc:"2", colors:[0,1,0,0,0]},
+        {name:"River Adept", castingcost1:"2U", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.0", cmc:"3", colors:[0,1,0,0,0]},
+        {name:"Volcano Tyrant", castingcost1:"4RR", castingcost2:"none", type:"Creature", rarity:"R", myrating:"4.0", cmc:"6", colors:[0,0,0,2,0]},
+        {name:"Slate Golem", castingcost1:"4", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.6", cmc:"4", colors:[0,0,0,0,0]}
+      ]`, "shallow.js"),
+    ])
+
+    const pool = parsePoolText(`
+      4 Steady Recruit
+      3 Shield Drill
+      4 Thought Snare
+      4 River Adept
+      3 Slate Golem
+      1 Volcano Tyrant
+    `)
+
+    const result = evaluateSealedPool(pool, ratings)
+    expect(result.decks[0]?.colors.splash).toBeUndefined()
+  })
+
+  it("accepts a light splash when fixing and card quality support it", () => {
+    const ratings = mergeRatingFiles([
+      parseRatingFileContent(`var FIXED = [
+        {name:"Stonefield Guide", castingcost1:"1W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.0", cmc:"2", colors:[1,0,0,0,0]},
+        {name:"Skyline Adept", castingcost1:"1U", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.1", cmc:"2", colors:[0,1,0,0,0]},
+        {name:"Lessons of Wind", castingcost1:"2U", castingcost2:"none", type:"Instant", rarity:"U", myrating:"3.2", cmc:"3", colors:[0,1,0,0,0]},
+        {name:"Radiant Verdict", castingcost1:"2W", castingcost2:"none", type:"Spell", rarity:"U", myrating:"3.2", cmc:"3", colors:[1,0,0,0,0]},
+        {name:"Late Ember", castingcost1:"3R", castingcost2:"none", type:"Instant", rarity:"C", myrating:"3.0", cmc:"4", colors:[0,0,0,1,0]},
+        {name:"Fires of the Peak", castingcost1:"4R", castingcost2:"none", type:"Creature", rarity:"R", myrating:"3.8", cmc:"5", colors:[0,0,0,1,0]},
+        {name:"Crossroad Vista", castingcost1:"0", castingcost2:"WUR", type:"Land", rarity:"U", myrating:"2.5", cmc:"0", colors:[0,0,0,0,0]},
+        {name:"Traveler's Bauble", castingcost1:"2", castingcost2:"none", type:"Spell", rarity:"C", myrating:"2.7", cmc:"2", colors:[0,0,0,0,0]}
+      ]`, "fixed.js"),
+    ])
+
+    const pool = parsePoolText(`
+      4 Stonefield Guide
+      4 Skyline Adept
+      3 Lessons of Wind
+      3 Radiant Verdict
+      1 Late Ember
+      1 Fires of the Peak
+      2 Crossroad Vista
+      3 Traveler's Bauble
+      4 Neutral Card
+    `)
+
+    const fallbackRatings = mergeRatingFiles([
+      parseRatingFileContent(`var EXTRA = [
+        {name:"Neutral Card", castingcost1:"3", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.6", cmc:"3", colors:[0,0,0,0,0]}
+      ]`, "extra.js"),
+    ])
+
+    const merged = {
+      index: new Map([...ratings.index, ...fallbackRatings.index]),
+      conflicts: [],
+    }
+
+    const result = evaluateSealedPool(pool, merged)
+    expect(result.decks.some((deck) => deck.colors.splash === "R")).toBe(true)
+    expect(result.decks.every((deck) => deck.landCount === 17)).toBe(true)
+  })
+
+  it("keeps duplicate clunky cards from dominating the build", () => {
+    const ratings = mergeRatingFiles([
+      parseRatingFileContent(`var DUPS = [
+        {name:"Huge Maybe", castingcost1:"6", castingcost2:"none", type:"Spell", rarity:"C", myrating:"3.0", cmc:"6", colors:[0,0,0,0,0]},
+        {name:"Reliable Bear", castingcost1:"2G", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.9", cmc:"3", colors:[0,0,0,0,1]},
+        {name:"Vastland Scout", castingcost1:"1G", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.8", cmc:"2", colors:[0,0,0,0,1]},
+        {name:"Tidy Bite", castingcost1:"1G", castingcost2:"none", type:"Instant", rarity:"C", myrating:"2.8", cmc:"2", colors:[0,0,0,0,1]},
+        {name:"Stone Helper", castingcost1:"2", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.6", cmc:"2", colors:[0,0,0,0,0]},
+        {name:"Ground Path", castingcost1:"3G", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.7", cmc:"4", colors:[0,0,0,0,1]}
+      ]`, "dups.js"),
+    ])
+
+    const pool = parsePoolText(`
+      6 Huge Maybe
+      4 Reliable Bear
+      4 Vastland Scout
+      4 Tidy Bite
+      5 Stone Helper
+      4 Ground Path
+    `)
+
+    const result = evaluateSealedPool(pool, ratings)
+    const hugeMaybe = result.decks[0]?.mainDeck.find((entry) => entry.card.displayName === "Huge Maybe")
+    expect((hugeMaybe?.quantity ?? 0)).toBeLessThan(4)
   })
 })

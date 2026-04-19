@@ -31,4 +31,6 @@ export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   includeMonoColor: true,
   allowSplash: true,
   maxResults: 5,
+  candidateLimit: 8,
+  variantsPerCandidate: 3,
 }
