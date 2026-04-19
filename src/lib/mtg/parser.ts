@@ -1,7 +1,7 @@
 import JSON5 from "json5"
 
 import { EMPTY_COLOR_COUNTS } from "@/lib/mtg/constants"
-import { formatCardName, normalizeCardName } from "@/lib/mtg/normalize"
+import { formatCardName, getCardNameAliases, normalizeCardName } from "@/lib/mtg/normalize"
 import { COLOR_SYMBOLS, type PoolEntry, type RatingCard, type RatingFileParseResult, type RatingMergeResult } from "@/lib/mtg/types"
 
 type RawRatingCard = {
@@ -17,16 +17,14 @@ type RawRatingCard = {
 }
 
 function extractArrayPayload(input: string): string {
-  const withoutBlockComments = input.replace(/\/\*[\s\S]*?\*\//g, "")
-  const withoutLineComments = withoutBlockComments.replace(/(^|[^:])\/\/.*$/gm, "$1")
-  const start = withoutLineComments.indexOf("[")
-  const end = withoutLineComments.lastIndexOf("]")
+  const start = input.indexOf("[")
+  const end = input.lastIndexOf("]")
 
   if (start === -1 || end === -1 || end <= start) {
     throw new Error("Could not find a rating array in the uploaded file.")
   }
 
-  return withoutLineComments.slice(start, end + 1)
+  return input.slice(start, end + 1)
 }
 
 function toColorCounts(rawColors: number[] | undefined) {
@@ -42,12 +40,15 @@ function toColorCounts(rawColors: number[] | undefined) {
 function parseRatingCard(rawCard: RawRatingCard): RatingCard {
   const displayName = formatCardName(rawCard.name ?? "")
   const normalizedName = normalizeCardName(displayName)
+  const aliases = getCardNameAliases(displayName)
   const rawColors = toColorCounts(rawCard.colors)
   const type = rawCard.type?.trim() ?? "Unknown"
 
   return {
     name: rawCard.name ?? displayName,
     displayName,
+    aliases,
+    normalizedAliases: aliases.map((alias) => normalizeCardName(alias)),
     type,
     rarity: String(rawCard.rarity ?? ""),
     rating: Number(rawCard.myrating ?? 0),
@@ -97,28 +98,32 @@ export function mergeRatingFiles(
 
   for (const file of files) {
     for (const card of file.cards) {
-      const existing = index.get(card.normalizedName)
+      for (const alias of card.normalizedAliases) {
+        const existing = index.get(alias)
 
-      if (!existing) {
-        index.set(card.normalizedName, {
-          card,
-          sources: [file.fileName],
-        })
-        continue
-      }
+        if (!existing) {
+          index.set(alias, {
+            card,
+            sources: [file.fileName],
+          })
+          continue
+        }
 
-      const sameCard =
-        existing.card.displayName === card.displayName &&
-        existing.card.type === card.type &&
-        existing.card.rating === card.rating &&
-        existing.card.cmc === card.cmc
+        const sameCard =
+          existing.card.displayName === card.displayName &&
+          existing.card.type === card.type &&
+          existing.card.rating === card.rating &&
+          existing.card.cmc === card.cmc
 
-      existing.sources.push(file.fileName)
+        if (!existing.sources.includes(file.fileName)) {
+          existing.sources.push(file.fileName)
+        }
 
-      if (!sameCard) {
-        conflicts.push(
-          `${card.displayName} appeared in multiple files with different values. Keeping the first version from ${existing.sources[0]}.`,
-        )
+        if (!sameCard) {
+          conflicts.push(
+            `${card.displayName} appeared in multiple files with different values. Keeping the first version from ${existing.sources[0]}.`,
+          )
+        }
       }
     }
   }
@@ -135,11 +140,13 @@ export function parsePoolText(poolText: string): PoolEntry[] {
       const match = line.match(/^(\d+)\s*x?\s+(.+)$/i)
       const quantity = match ? Number(match[1]) : 1
       const inputName = match ? match[2].trim() : line
+      const aliases = getCardNameAliases(inputName)
 
       return {
         quantity,
         inputName,
         normalizedName: normalizeCardName(inputName),
+        normalizedAliases: aliases.map((alias) => normalizeCardName(alias)),
       }
     })
 }

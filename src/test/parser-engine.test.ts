@@ -25,7 +25,8 @@ const MAIN_FILE = `var MAIN = [
 
 const BONUS_FILE = `/* bonus sheet */ var BONUS = [
   {name:"Bonus Dragon", castingcost1:"4R", castingcost2:"none", type:"Creature", rarity:"R", myrating:"3.7", cmc:"5", colors:[0,0,0,1,0]},
-  {name:"Bonus Charm", castingcost1:"W", castingcost2:"none", type:"Instant", rarity:"U", myrating:"3.0", cmc:"1", colors:[1,0,0,0,0]}
+  {name:"Bonus Charm", castingcost1:"W", castingcost2:"none", type:"Instant", rarity:"U", myrating:"3.0", cmc:"1", colors:[1,0,0,0,0]},
+  {name:"Kirol, History Buff // Pack a Punch", castingcost1:"2R", castingcost2:"1R", type:"Creature", rarity:"U", myrating:"3.3", cmc:"3", colors:[0,0,0,1,0]}
 ]`
 
 describe("rating parser", () => {
@@ -48,8 +49,41 @@ describe("rating parser", () => {
   it("parses quantities from pasted pool text", () => {
     const pool = parsePoolText("2 Alpha Knight\nBonus Dragon")
     expect(pool).toEqual([
-      { quantity: 2, inputName: "Alpha Knight", normalizedName: "alpha knight" },
-      { quantity: 1, inputName: "Bonus Dragon", normalizedName: "bonus dragon" },
+      {
+        quantity: 2,
+        inputName: "Alpha Knight",
+        normalizedName: "alpha knight",
+        normalizedAliases: ["alpha knight"],
+      },
+      {
+        quantity: 1,
+        inputName: "Bonus Dragon",
+        normalizedName: "bonus dragon",
+        normalizedAliases: ["bonus dragon"],
+      },
+    ])
+  })
+
+  it("indexes both faces of double-faced or split-name cards", () => {
+    const merged = mergeRatingFiles([
+      parseRatingFileContent(BONUS_FILE, "bonus.js"),
+    ])
+
+    expect(
+      merged.index.get("kirol history buff")?.card.displayName,
+    ).toBe("Kirol, History Buff // Pack a Punch")
+    expect(
+      merged.index.get("pack a punch")?.card.displayName,
+    ).toBe("Kirol, History Buff // Pack a Punch")
+  })
+
+  it("parses full card names into aliases that include the front face", () => {
+    const pool = parsePoolText("Kirol, History Buff // Pack a Punch")
+
+    expect(pool[0]?.normalizedAliases).toEqual([
+      "kirol history buff pack a punch",
+      "kirol history buff",
+      "pack a punch",
     ])
   })
 })
@@ -73,6 +107,7 @@ describe("sealed engine", () => {
       2 Neutral Golem
       3 Rootwise Bear
       3 Vine Lash
+      1 Pack a Punch
       1 Missing Card
     `)
 

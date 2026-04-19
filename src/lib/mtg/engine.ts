@@ -31,7 +31,9 @@ function resolvePool(pool: PoolEntry[], ratings: RatingMergeResult): ResolvedPoo
   const missingCards: MissingPoolCard[] = []
 
   for (const entry of pool) {
-    const match = ratings.index.get(entry.normalizedName)
+    const match = entry.normalizedAliases
+      .map((alias) => ratings.index.get(alias))
+      .find(Boolean)
 
     if (!match) {
       missingCards.push({

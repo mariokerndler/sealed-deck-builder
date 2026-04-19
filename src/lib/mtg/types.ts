@@ -12,6 +12,8 @@ export type DeckColorIdentity = {
 export type RatingCard = {
   name: string
   displayName: string
+  aliases: string[]
+  normalizedAliases: string[]
   type: string
   rarity: string
   rating: number
@@ -37,6 +39,7 @@ export type PoolEntry = {
   quantity: number
   inputName: string
   normalizedName: string
+  normalizedAliases: string[]
 }
 
 export type PoolCard = {

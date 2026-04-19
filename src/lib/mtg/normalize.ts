@@ -14,3 +14,17 @@ export function normalizeCardName(name: string): string {
     .trim()
     .toLowerCase()
 }
+
+export function getCardNameAliases(name: string): string[] {
+  const formatted = formatCardName(name)
+  const parts = formatted
+    .split("//")
+    .map((part) => formatCardName(part))
+    .filter(Boolean)
+
+  if (parts.length <= 1) {
+    return [formatted]
+  }
+
+  return [formatted, ...parts]
+}
