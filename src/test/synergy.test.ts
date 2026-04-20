@@ -192,6 +192,45 @@ describe("deriveCardSynergyTags", () => {
     const tags = deriveCardSynergyTags(card, new Set())
     expect(Object.keys(tags)).toHaveLength(0)
   })
+
+  it("tags an aftermath card as graveyard payoff via layout field", () => {
+    const card: ScryfallCard = {
+      name: "Cut // Ribbons",
+      type_line: "Instant // Sorcery",
+      keywords: [],
+      layout: "aftermath",
+      card_faces: [
+        { name: "Cut", type_line: "Instant", oracle_text: "Destroy target creature.", keywords: [] },
+        { name: "Ribbons", type_line: "Sorcery", oracle_text: "Aftermath (Cast this only from your graveyard. Then exile it.)", keywords: ["Aftermath"] },
+      ],
+    }
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.graveyard).toBe("payoff")
+  })
+
+  it("tags a jump-start card as graveyard payoff via keyword", () => {
+    const card = makeScryfallCard({ name: "Risk Factor", type_line: "Instant", oracle_text: "Target opponent loses 4 life unless they draw 3 cards. Jump-start.", keywords: ["Jump-start"] })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.graveyard).toBe("payoff")
+  })
+
+  it("tags 'sacrifice another creature as additional cost' as sacrifice provider", () => {
+    const card = makeScryfallCard({ name: "Bone Splinters", type_line: "Sorcery", oracle_text: "As an additional cost to cast this spell, sacrifice another creature." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.sacrifice).toBe("provider")
+  })
+
+  it("does not tag tokens payoff for a generic creature ETB trigger", () => {
+    const card = makeScryfallCard({ name: "Mentor of the Meek", type_line: "Creature", oracle_text: "Whenever another creature with power 2 or less enters, you may pay {1}. If you do, draw a card." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.tokens).toBeUndefined()
+  })
+
+  it("tags tokens payoff when trigger explicitly names a token entering", () => {
+    const card = makeScryfallCard({ name: "Anointed Procession", type_line: "Enchantment", oracle_text: "Whenever a token enters under your control, create a copy of it." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.tokens).toBe("payoff")
+  })
 })
 
 describe("extractPoolSubtypes", () => {

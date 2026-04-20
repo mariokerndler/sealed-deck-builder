@@ -102,6 +102,7 @@ describe("batchFetchCards", () => {
 
     expect(result.data.has("front face back face")).toBe(true)
     expect(result.data.has("front face")).toBe(true)
+    expect(result.data.has("back face")).toBe(true)
   })
 
   it("deduplicates input names before batching", async () => {

@@ -5,6 +5,7 @@ export type ScryfallCard = {
   oracle_text?: string
   keywords: string[]
   type_line: string
+  layout?: string
   card_faces?: {
     name: string
     oracle_text: string
@@ -42,6 +43,9 @@ function indexCard(card: ScryfallCard, data: ScryfallDataMap): void {
   data.set(normalizeCardName(card.name), card)
   if (card.card_faces && card.card_faces.length > 0) {
     data.set(normalizeCardName(card.card_faces[0].name), card)
+    if (card.card_faces.length > 1) {
+      data.set(normalizeCardName(card.card_faces[1].name), card)
+    }
   }
 }
 

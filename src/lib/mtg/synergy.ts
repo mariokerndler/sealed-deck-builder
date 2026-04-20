@@ -9,8 +9,8 @@ const GRAVEYARD_PAYOFF = /from (your|a|the) graveyard|\bescape\b|\bflashback\b|\
 const COUNTERS_PROVIDER = /enters? with.{0,20}\+1\/\+1 counter|\bproliferate\b|\badapt\b|\bevolve\b|\briot\b|\breinforce\b/i
 const COUNTERS_PAYOFF = /\bcounter on it\b|\bnumber of counters\b|\bfor each counter\b/i
 const TOKENS_PROVIDER = /\bcreates?.{0,50}tokens?|\bpopulate\b|\bamass\b/i
-const TOKENS_PAYOFF = /whenever (a|another) (creature|token).{0,30}enters|\beach token\b|\bfor each token\b/i
-const SACRIFICE_PROVIDER = /\bsacrifice\b.{0,50}(as an additional cost|to activate)|\bsacrifice a creature\b/i
+const TOKENS_PAYOFF = /whenever (a|another) token.{0,30}enters|whenever (a|another) (creature|token).{0,30}enters.{0,60}token|\beach token\b|\bfor each token\b/i
+const SACRIFICE_PROVIDER = /\bsacrifice\b.{0,60}(as an additional cost|to activate|another creature|any number)|\b(you may )?sacrifice a (creature|permanent)\b/i
 const SACRIFICE_PAYOFF = /whenever.{0,60}(creature|permanent).{0,30}\bdies\b/i
 const LIFELINK_PROVIDER = /\bgains? lifelink\b/i
 const LIFELINK_PAYOFF = /whenever you gain life/i
@@ -122,7 +122,7 @@ export function deriveCardSynergyTags(
 
   // graveyard
   const isGraveyardProvider = GRAVEYARD_PROVIDER.test(text)
-  const isGraveyardPayoff = GRAVEYARD_PAYOFF.test(text) || keywords.some((k) => /escape|flashback|unearth|dredge/i.test(k))
+  const isGraveyardPayoff = GRAVEYARD_PAYOFF.test(text) || keywords.some((k) => /escape|flashback|unearth|dredge|aftermath|jump-?start|retrace/i.test(k))
   if (isGraveyardProvider && isGraveyardPayoff) {
     tags.graveyard = "both"
   } else if (isGraveyardProvider) {
@@ -194,6 +194,15 @@ export function deriveCardSynergyTags(
       tags.tribal = "provider"
     } else if (isTribalPayoff) {
       tags.tribal = "payoff"
+    }
+  }
+
+  // Aftermath cards cast their second face from the graveyard — always graveyard payoffs
+  if (card.layout === "aftermath") {
+    if (!tags.graveyard) {
+      tags.graveyard = "payoff"
+    } else if (tags.graveyard === "provider") {
+      tags.graveyard = "both"
     }
   }
 
