@@ -1,4 +1,4 @@
-import { startTransition, useMemo, useState, type ChangeEvent } from "react"
+import { startTransition, useEffect, useMemo, useState, type ChangeEvent, type KeyboardEvent } from "react"
 import {
   CheckCircle2Icon,
   CopyIcon,
@@ -8,6 +8,8 @@ import {
   LayersIcon,
   Layers3Icon,
   LoaderCircleIcon,
+  MinusIcon,
+  PlusIcon,
   SparklesIcon,
   TriangleAlertIcon,
   WandSparklesIcon,
@@ -59,7 +61,23 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { COLOR_NAMES, batchFetchCards, describeManaBase, evaluateSealedPool, mergeRatingFiles, parsePoolText, parseRatingFileContent, type RankedDeckResult, type RatingFileParseResult, type ScryfallDataMap, type SynergyTag } from "@/lib/mtg"
+import {
+  buildQuickAddCandidates,
+  COLOR_NAMES,
+  batchFetchCards,
+  describeManaBase,
+  evaluateSealedPool,
+  mergeRatingFiles,
+  parsePoolText,
+  parseQuickAddInput,
+  parseRatingFileContent,
+  searchQuickAddCandidates,
+  type RankedDeckResult,
+  type RatingFileParseResult,
+  type ScryfallDataMap,
+  type SynergyTag,
+  upsertPoolEntry,
+} from "@/lib/mtg"
 import { RATING_PRESETS, type RatingPreset } from "@/lib/ratings/presets"
 
 const SAMPLE_POOL = `1 Harsh Annotation
@@ -136,7 +154,7 @@ function formatManaBaseForCopy(deck: RankedDeckResult) {
 }
 
 function App() {
-  const [poolText, setPoolText] = useState(SAMPLE_POOL)
+  const [poolText, setPoolText] = useState("")
   const [ratingFiles, setRatingFiles] = useState<RatingFileParseResult[]>([])
   const [fileErrors, setFileErrors] = useState<string[]>([])
   const [results, setResults] = useState<RankedDeckResult[]>([])
@@ -148,6 +166,8 @@ function App() {
   const [isFetchingScryfall, setIsFetchingScryfall] = useState(false)
   const [scryfallErrors, setScryfallErrors] = useState<string[]>([])
   const [scryfallProgress, setScryfallProgress] = useState<{ fetched: number; total: number } | null>(null)
+  const [quickAddInput, setQuickAddInput] = useState("")
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0)
 
   const mergedRatings = useMemo(() => mergeRatingFiles(ratingFiles), [ratingFiles])
   const parsedPool = useMemo(() => parsePoolText(poolText), [poolText])
@@ -155,6 +175,22 @@ function App() {
     () => ratingFiles.reduce((sum, file) => sum + file.cards.length, 0),
     [ratingFiles],
   )
+  const quickAddCandidates = useMemo(
+    () => buildQuickAddCandidates(mergedRatings, scryfallData.size > 0 ? scryfallData : undefined),
+    [mergedRatings, scryfallData],
+  )
+  const parsedQuickAdd = useMemo(
+    () => parseQuickAddInput(quickAddInput),
+    [quickAddInput],
+  )
+  const quickAddSuggestions = useMemo(
+    () => searchQuickAddCandidates(quickAddInput, quickAddCandidates),
+    [quickAddInput, quickAddCandidates],
+  )
+
+  useEffect(() => {
+    setHighlightedSuggestionIndex(0)
+  }, [quickAddInput, quickAddSuggestions.length])
 
 
   async function handleFetchCardData() {
@@ -248,6 +284,54 @@ function App() {
     setScryfallErrors([])
   }
 
+  function handleAdjustPoolEntry(cardName: string, quantityDelta: number) {
+    setPoolText((current) => upsertPoolEntry(current, cardName, quantityDelta))
+  }
+
+  function handleQuickAdd(candidateName?: string) {
+    const targetName = candidateName ?? quickAddSuggestions[highlightedSuggestionIndex]?.name
+    if (!targetName) {
+      return
+    }
+
+    setPoolText((current) => upsertPoolEntry(current, targetName, parsedQuickAdd.quantity))
+    setQuickAddInput("")
+    setHighlightedSuggestionIndex(0)
+  }
+
+  function handleQuickAddKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setHighlightedSuggestionIndex((current) =>
+        quickAddSuggestions.length === 0 ? 0 : Math.min(current + 1, quickAddSuggestions.length - 1),
+      )
+      return
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setHighlightedSuggestionIndex((current) =>
+        quickAddSuggestions.length === 0 ? 0 : Math.max(current - 1, 0),
+      )
+      return
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault()
+      handleQuickAdd()
+    }
+  }
+
+  function handleQuickAddFromPool(entryName: string) {
+    setQuickAddInput(entryName)
+  }
+
+  function handleClearPool() {
+    setPoolText("")
+    setResults([])
+    setMissingCards([])
+  }
+
   async function copyText(text: string, deckId: string) {
     await navigator.clipboard.writeText(text)
     setCopiedDeckId(deckId)
@@ -310,13 +394,171 @@ function App() {
                   Pool Input
                 </CardTitle>
                 <CardDescription>
-                  Paste one card per line. You can include counts like <code>2 Lightning Bolt</code>.
+                  Enter cards quickly with fuzzy set-aware search, then fall back to raw text only when you need it. You can still paste one card per line with counts like <code>2 Lightning Bolt</code>.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex flex-col gap-5">
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="sealed-pool">Sealed card pool</FieldLabel>
+                    <FieldLabel htmlFor="quick-add-card">Quick add cards</FieldLabel>
+                    <FieldContent>
+                      <Input
+                        id="quick-add-card"
+                        value={quickAddInput}
+                        onChange={(event) => setQuickAddInput(event.target.value)}
+                        onKeyDown={handleQuickAddKeyDown}
+                        placeholder="Type a card name, or use 2x Harsh Annotation"
+                        disabled={quickAddCandidates.length === 0}
+                      />
+                      <FieldDescription>
+                        Type a fragment and press <code>Enter</code> to add the top match. Use <code>2x</code> or <code>3</code> in front to add multiples at once.
+                      </FieldDescription>
+                    </FieldContent>
+                  </Field>
+                </FieldGroup>
+
+                {quickAddCandidates.length === 0 ? (
+                  <Alert>
+                    <InfoIcon />
+                    <AlertTitle>Load a set first for quick entry</AlertTitle>
+                    <AlertDescription>
+                      Quick add becomes set-aware once you load a rating preset or upload rating files.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Card size="sm" className="bg-stone-50/95">
+                    <CardHeader>
+                      <CardTitle className="text-base">Suggested matches</CardTitle>
+                      <CardDescription>
+                        Showing the best matches for <code>{parsedQuickAdd.query || "your query"}</code>. Arrow keys change selection and Enter adds the highlighted card.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">{parsedQuickAdd.quantity}x queued</Badge>
+                        <Badge variant="outline">{quickAddCandidates.length} cards indexed</Badge>
+                        {quickAddSuggestions.length > 0 && (
+                          <Button size="sm" variant="outline" onClick={() => handleQuickAdd()}>
+                            <PlusIcon data-icon="inline-start" />
+                            Add highlighted match
+                          </Button>
+                        )}
+                      </div>
+                      <div className="grid gap-2">
+                        {quickAddSuggestions.map((candidate, index) => (
+                          <button
+                            key={candidate.normalizedName}
+                            type="button"
+                            className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-colors ${
+                              index === highlightedSuggestionIndex
+                                ? "border-stone-900 bg-stone-900 text-stone-50"
+                                : "border-stone-200 bg-white text-stone-800 hover:border-stone-400"
+                            }`}
+                            onMouseEnter={() => setHighlightedSuggestionIndex(index)}
+                            onClick={() => handleQuickAdd(candidate.name)}
+                          >
+                            <span className="font-medium">{candidate.name}</span>
+                            <span className={`text-xs ${index === highlightedSuggestionIndex ? "text-stone-300" : "text-muted-foreground"}`}>
+                              {candidate.type ?? candidate.source}
+                            </span>
+                          </button>
+                        ))}
+                        {quickAddSuggestions.length === 0 && (
+                          <p className="rounded-xl border border-dashed border-stone-300 bg-white px-3 py-4 text-sm text-muted-foreground">
+                            No close set-aware matches yet. Try a shorter fragment, or edit the raw pool list below.
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card size="sm" className="bg-stone-50/95">
+                  <CardHeader>
+                    <CardTitle className="text-base">Current pool</CardTitle>
+                    <CardDescription>
+                      Use the buttons to adjust counts quickly, or click a card name to send it back into quick add for easy correction.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-4">
+                    {parsedPool.length > 0 ? (
+                      <ScrollArea className="max-h-[20rem] rounded-xl border border-stone-200 bg-white">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Qty</TableHead>
+                              <TableHead>Card</TableHead>
+                              <TableHead className="text-right">Adjust</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {parsedPool.map((entry) => (
+                              <TableRow key={entry.normalizedName}>
+                                <TableCell>{entry.quantity}</TableCell>
+                                <TableCell>
+                                  <button
+                                    type="button"
+                                    className="font-medium text-stone-800 hover:text-stone-950"
+                                    onClick={() => handleQuickAddFromPool(entry.inputName)}
+                                  >
+                                    {entry.inputName}
+                                  </button>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      aria-label={`Remove one ${entry.inputName}`}
+                                      onClick={() => handleAdjustPoolEntry(entry.inputName, -1)}
+                                    >
+                                      <MinusIcon data-icon="inline-start" />
+                                      Remove
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      aria-label={`Add one ${entry.inputName}`}
+                                      onClick={() => handleAdjustPoolEntry(entry.inputName, 1)}
+                                    >
+                                      <PlusIcon data-icon="inline-start" />
+                                      Add
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    ) : (
+                      <Empty className="border border-dashed border-stone-300 bg-white">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">
+                            <Layers3Icon />
+                          </EmptyMedia>
+                          <EmptyTitle>No pool entries yet</EmptyTitle>
+                          <EmptyDescription>
+                            Start with quick add above, paste a list below, or load the sample pool.
+                          </EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => setPoolText(SAMPLE_POOL)}>
+                        <SparklesIcon data-icon="inline-start" />
+                        Load sample pool
+                      </Button>
+                      <Button variant="ghost" onClick={handleClearPool}>
+                        Clear pool
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="sealed-pool">Raw sealed pool list</FieldLabel>
                     <FieldContent>
                       <Textarea
                         id="sealed-pool"
@@ -348,10 +590,6 @@ function App() {
               <CardFooter className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="secondary">{parsedPool.length} entries parsed</Badge>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" onClick={() => setPoolText(SAMPLE_POOL)}>
-                    <SparklesIcon data-icon="inline-start" />
-                    Load sample pool
-                  </Button>
                   {scryfallSource === "preset" ? (
                     <Badge variant="secondary" className="gap-1 text-emerald-700">
                       <CheckCircle2Icon className="h-3.5 w-3.5" />

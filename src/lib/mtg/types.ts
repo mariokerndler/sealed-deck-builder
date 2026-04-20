@@ -176,3 +176,66 @@ export type SearchConfig = {
   candidateLimit: number
   variantsPerCandidate: number
 }
+
+export type CardRegion = {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type OcrTitleResult = {
+  regionId: string
+  text: string
+  confidence: number
+}
+
+export type PoolImportCandidateSource = "rating" | "scryfall" | "ocr"
+
+export type PoolImportCandidate = {
+  name: string
+  normalizedName: string
+  aliases: string[]
+  normalizedAliases: string[]
+  source: PoolImportCandidateSource
+}
+
+export type PoolImportCandidateIndex = {
+  aliasMap: Map<string, PoolImportCandidate>
+  candidates: PoolImportCandidate[]
+}
+
+export type PoolImportReviewStatus = "accepted" | "review" | "rejected"
+
+export type ResolvedPoolImportEntry = {
+  id: string
+  regionId: string
+  ocrText: string
+  ocrConfidence: number
+  resolvedName: string | null
+  normalizedResolvedName: string | null
+  matchedAlias: string | null
+  matchConfidence: number
+  source: PoolImportCandidateSource | null
+  needsReview: boolean
+  reviewStatus: PoolImportReviewStatus
+  provisional: boolean
+}
+
+export type ResolvedPoolImportResult = {
+  entries: ResolvedPoolImportEntry[]
+  detectedCards: number
+  acceptedCount: number
+  reviewCount: number
+  rejectedCount: number
+  usedFallbackDetection: boolean
+  warning?: string
+}
+
+export type PoolPhotoImportProgress = {
+  stage: "detecting" | "ocr" | "matching"
+  processed: number
+  total: number
+  message: string
+}
