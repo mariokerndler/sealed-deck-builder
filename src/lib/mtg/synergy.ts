@@ -5,17 +5,25 @@ import type { ScryfallCard, ScryfallDataMap } from "@/lib/mtg/scryfall"
 
 const SPELL_PAYOFF_PAYOFF = /whenever you cast an instant or sorcery|prowess|magecraft/i
 const GRAVEYARD_PROVIDER = /\bmills?\b|\bdiscards?\b|\bput.{0,40}into.{0,20}graveyard/i
-const GRAVEYARD_PAYOFF = /from (your|a|the) graveyard|\bescape\b|\bflashback\b|\bunearth\b|\bdredge\b/i
-const COUNTERS_PROVIDER = /enters? with.{0,20}\+1\/\+1 counter|\bproliferate\b|\badapt\b|\bevolve\b|\briot\b|\breinforce\b/i
+const GRAVEYARD_PAYOFF = /from (your|a|the) graveyard|\bescape\b|\bflashback\b|\bunearth\b|\bdredge\b|whenever.{0,40}(card|creature).{0,30}leaves.{0,20}(your )?graveyard/i
+const COUNTERS_PROVIDER = /enters? with.{0,20}\+1\/\+1 counter|\bproliferate\b|\badapt\b|\bevolve\b|\briot\b|\breinforce\b|\bX \+1\/\+1 counters?\b|\bput X.{0,20}counters?\b/i
 const COUNTERS_PAYOFF = /\bcounter on it\b|\bnumber of counters\b|\bfor each counter\b/i
 const TOKENS_PROVIDER = /\bcreates?.{0,50}tokens?|\bpopulate\b|\bamass\b/i
 const TOKENS_PAYOFF = /whenever (a|another) token.{0,30}enters|whenever (a|another) (creature|token).{0,30}enters.{0,60}token|\beach token\b|\bfor each token\b/i
 const SACRIFICE_PROVIDER = /\bsacrifice\b.{0,60}(as an additional cost|to activate|another creature|any number)|\b(you may )?sacrifice a (creature|permanent)\b/i
 const SACRIFICE_PAYOFF = /whenever.{0,60}(creature|permanent).{0,30}\bdies\b/i
-const LIFELINK_PROVIDER = /\bgains? lifelink\b/i
-const LIFELINK_PAYOFF = /whenever you gain life/i
+const LIFEGAIN_PROVIDER =
+  /\bgains? lifelink\b|\byou gain \d+ life\b|\bgain life equal to\b|\byou gain life for each\b|\byou gain X life\b|\bloses?.{0,40}you gain.{0,20}life\b/i
+const LIFEGAIN_PAYOFF = /whenever you gain life/i
 const KEYWORD_LORD =
   /other creatures you control (have|get|gain).{0,50}(flying|trample|lifelink|vigilance|menace|haste|first strike|deathtouch)/i
+const REPARTEE_PROVIDER =
+  /target (a |your |another )?creature.{0,80}(gets? \+[0-9]+\/|gains? (hexproof|indestructible|protection|trample|flying|first strike|double strike|vigilance)|\+[0-9]+\/\+[0-9]+)/i
+const REPARTEE_PAYOFF =
+  /whenever.{0,50}becomes? (the )?target(ed)?.{0,40}spell.{0,40}you control|whenever you cast a spell that targets? (it\b|this\b)/i
+const EXPENSIVE_SPELLS_PAYOFF =
+  /whenever you cast a spell with (mana value|converted mana cost) [5-9]|\bopus\b/i
+const CONVERGE_PAYOFF = /\bconverge\b|for each (different )?color of mana spent to cast/i
 const TRIBAL_PAYOFF_TEMPLATE = (subtype: string) =>
   new RegExp(
     `other ${subtype}s?|for each ${subtype}|${subtype}s? you control (get|have|gain)`,
@@ -103,6 +111,7 @@ export function extractPoolSubtypes(data: ScryfallDataMap, threshold = 2): Set<s
 export function deriveCardSynergyTags(
   card: ScryfallCard,
   poolSubtypes: Set<string>,
+  isFixing = false,
 ): CardSynergyTags {
   const { text, keywords } = resolveOracleText(card)
   const tags: CardSynergyTags = {}
@@ -164,16 +173,16 @@ export function deriveCardSynergyTags(
     tags.sacrifice = "payoff"
   }
 
-  // lifelink
-  const isLifelinkProvider =
-    LIFELINK_PROVIDER.test(text) || keywords.some((k) => /^lifelink$/i.test(k))
-  const isLifelinkPayoff = LIFELINK_PAYOFF.test(text)
-  if (isLifelinkProvider && isLifelinkPayoff) {
-    tags.lifelink = "both"
-  } else if (isLifelinkProvider) {
-    tags.lifelink = "provider"
-  } else if (isLifelinkPayoff) {
-    tags.lifelink = "payoff"
+  // lifegain
+  const isLifegainProvider =
+    LIFEGAIN_PROVIDER.test(text) || keywords.some((k) => /^lifelink$/i.test(k))
+  const isLifegainPayoff = LIFEGAIN_PAYOFF.test(text)
+  if (isLifegainProvider && isLifegainPayoff) {
+    tags.lifegain = "both"
+  } else if (isLifegainProvider) {
+    tags.lifegain = "provider"
+  } else if (isLifegainPayoff) {
+    tags.lifegain = "payoff"
   }
 
   // keywordLord
@@ -195,6 +204,40 @@ export function deriveCardSynergyTags(
     } else if (isTribalPayoff) {
       tags.tribal = "payoff"
     }
+  }
+
+  // repartee — instants that pump/protect your creatures are providers; creatures that reward being targeted are payoffs
+  const isReparteeProvider = isSpell && REPARTEE_PROVIDER.test(text)
+  const isReparteePayoff = REPARTEE_PAYOFF.test(text)
+  if (isReparteeProvider && isReparteePayoff) {
+    tags.repartee = "both"
+  } else if (isReparteeProvider) {
+    tags.repartee = "provider"
+  } else if (isReparteePayoff) {
+    tags.repartee = "payoff"
+  }
+
+  // expensiveSpells — non-land cards with CMC ≥ 5 are providers; payoffs reward casting them
+  const isExpensiveSpellProvider =
+    card.cmc !== undefined && card.cmc >= 5 && !/\bland\b/i.test(card.type_line)
+  const isExpensiveSpellPayoff = EXPENSIVE_SPELLS_PAYOFF.test(text)
+  if (isExpensiveSpellProvider && isExpensiveSpellPayoff) {
+    tags.expensiveSpells = "both"
+  } else if (isExpensiveSpellProvider) {
+    tags.expensiveSpells = "provider"
+  } else if (isExpensiveSpellPayoff) {
+    tags.expensiveSpells = "payoff"
+  }
+
+  // converge — fixing cards are providers; converge spells are payoffs
+  const isConvergeProvider = isFixing
+  const isConvergePayoff = CONVERGE_PAYOFF.test(text) || keywords.some((k) => /converge/i.test(k))
+  if (isConvergeProvider && isConvergePayoff) {
+    tags.converge = "both"
+  } else if (isConvergeProvider) {
+    tags.converge = "provider"
+  } else if (isConvergePayoff) {
+    tags.converge = "payoff"
   }
 
   // Aftermath cards cast their second face from the graveyard — always graveyard payoffs
@@ -219,7 +262,7 @@ export function buildAllTags(
   for (const { ratingCard } of poolCards) {
     const scryfallCard = scryfallData.get(ratingCard.normalizedName)
     if (!scryfallCard) continue
-    allTags.set(ratingCard.normalizedName, deriveCardSynergyTags(scryfallCard, poolSubtypes))
+    allTags.set(ratingCard.normalizedName, deriveCardSynergyTags(scryfallCard, poolSubtypes, ratingCard.role.isFixing))
   }
 
   return allTags
@@ -233,9 +276,12 @@ const TAG_WEIGHTS: Record<SynergyTag, number> = {
   tokens: 2.0,
   sacrifice: 2.0,
   counters: 1.8,
+  expensiveSpells: 1.8,
   spellPayoff: 1.5,
+  repartee: 1.5,
+  converge: 1.5,
   keywordLord: 1.2,
-  lifelink: 1.0,
+  lifegain: 1.2,
 }
 
 const ALL_TAGS: SynergyTag[] = [
@@ -244,9 +290,12 @@ const ALL_TAGS: SynergyTag[] = [
   "tokens",
   "sacrifice",
   "counters",
+  "expensiveSpells",
   "spellPayoff",
+  "repartee",
+  "converge",
   "keywordLord",
-  "lifelink",
+  "lifegain",
 ]
 
 const SYNERGY_BONUS_CAP = 8.0

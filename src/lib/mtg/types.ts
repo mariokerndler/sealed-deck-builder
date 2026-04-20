@@ -139,7 +139,10 @@ export type SynergyTag =
   | "counters"
   | "tokens"
   | "sacrifice"
-  | "lifelink"
+  | "lifegain"
+  | "repartee"
+  | "expensiveSpells"
+  | "converge"
 
 export type SynergyRole = "provider" | "payoff" | "both"
 

@@ -103,16 +103,28 @@ describe("deriveCardSynergyTags", () => {
     expect(tags.sacrifice).toBe("payoff")
   })
 
-  it("tags a lifelink card as lifelink provider", () => {
+  it("tags a lifelink card as lifegain provider", () => {
     const card = makeScryfallCard({ name: "Lifelinker", type_line: "Creature", oracle_text: "Lifelink", keywords: ["Lifelink"] })
     const tags = deriveCardSynergyTags(card, new Set())
-    expect(tags.lifelink).toBe("provider")
+    expect(tags.lifegain).toBe("provider")
   })
 
-  it("tags a 'whenever you gain life' card as lifelink payoff", () => {
+  it("tags a 'you gain N life' card as lifegain provider", () => {
+    const card = makeScryfallCard({ name: "Revitalize", type_line: "Instant", oracle_text: "You gain 3 life. Draw a card." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.lifegain).toBe("provider")
+  })
+
+  it("tags a drain spell as lifegain provider", () => {
+    const card = makeScryfallCard({ name: "Sovereign's Bite", type_line: "Instant", oracle_text: "Target player loses 3 life and you gain 3 life." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.lifegain).toBe("provider")
+  })
+
+  it("tags a 'whenever you gain life' card as lifegain payoff", () => {
     const card = makeScryfallCard({ name: "Soul Warden", type_line: "Creature", oracle_text: "Whenever you gain life, put a +1/+1 counter on Soul Warden." })
     const tags = deriveCardSynergyTags(card, new Set())
-    expect(tags.lifelink).toBe("payoff")
+    expect(tags.lifegain).toBe("payoff")
   })
 
   it("tags a graveyard mill card as graveyard provider", () => {
@@ -231,6 +243,65 @@ describe("deriveCardSynergyTags", () => {
     const tags = deriveCardSynergyTags(card, new Set())
     expect(tags.tokens).toBe("payoff")
   })
+
+  // Lorehold: leaves-graveyard trigger
+  it("tags a 'whenever a card leaves your graveyard' card as graveyard payoff", () => {
+    const card = makeScryfallCard({ name: "Lorehold Spirit", type_line: "Creature", oracle_text: "Whenever a nontoken creature card leaves your graveyard, create a 1/1 white Spirit creature token." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.graveyard).toBe("payoff")
+  })
+
+  // Quandrix: X-spell counter provider
+  it("tags a card that puts X +1/+1 counters as counters provider", () => {
+    const card = makeScryfallCard({ name: "Vastwood Surge", type_line: "Sorcery", oracle_text: "Put X +1/+1 counters on each of up to two target creatures." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.counters).toBe("provider")
+  })
+
+  // Silverquill: repartee
+  it("tags an instant that pumps a target creature you control as repartee provider", () => {
+    const card = makeScryfallCard({ name: "Guiding Voice", type_line: "Instant", oracle_text: "Target creature gets +1/+1 until end of turn." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.repartee).toBe("provider")
+  })
+
+  it("tags a creature with a targeting-reward trigger as repartee payoff", () => {
+    const card = makeScryfallCard({ name: "Silverquill Pledgemage", type_line: "Creature", oracle_text: "Whenever you cast a spell that targets this creature, it gets +1/+0 until end of turn." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.repartee).toBe("payoff")
+  })
+
+  // Prismari: expensive spells
+  it("tags a non-land card with CMC 5 as expensiveSpells provider", () => {
+    const card = makeScryfallCard({ name: "Apex Devastator", type_line: "Creature", oracle_text: "Cascade, cascade, cascade, cascade.", cmc: 10 })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.expensiveSpells).toBe("provider")
+  })
+
+  it("tags a card with an expensive-spell payoff trigger as expensiveSpells payoff", () => {
+    const card = makeScryfallCard({ name: "Prismari Professor", type_line: "Creature", oracle_text: "Whenever you cast a spell with mana value 5 or greater, create a 4/4 Elemental token." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.expensiveSpells).toBe("payoff")
+  })
+
+  it("does not tag a land with CMC 0 as expensiveSpells provider", () => {
+    const card = makeScryfallCard({ name: "Swamp", type_line: "Basic Land — Swamp", oracle_text: "", cmc: 0 })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.expensiveSpells).toBeUndefined()
+  })
+
+  // 5-color: converge
+  it("tags a converge spell as converge payoff", () => {
+    const card = makeScryfallCard({ name: "Radiant Flames", type_line: "Sorcery", oracle_text: "Converge — Radiant Flames deals X damage to each creature, where X is the number of colors of mana spent to cast it." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.converge).toBe("payoff")
+  })
+
+  it("tags a fixing card as converge provider when isFixing=true", () => {
+    const card = makeScryfallCard({ name: "Cultivate", type_line: "Sorcery", oracle_text: "Search your library for up to two basic land cards, reveal those cards, and put one onto the battlefield tapped and the other into your hand." })
+    const tags = deriveCardSynergyTags(card, new Set(), true)
+    expect(tags.converge).toBe("provider")
+  })
 })
 
 describe("extractPoolSubtypes", () => {
@@ -324,7 +395,7 @@ describe("computeSynergyBonus", () => {
     // Create a deck with very high synergy across many tags
     const allTags = new Map<string, ReturnType<typeof deriveCardSynergyTags>>()
     const deckCards: DeckCard[] = []
-    const tags = ["tribal", "graveyard", "tokens", "sacrifice", "counters", "spellPayoff", "keywordLord", "lifelink"] as const
+    const tags = ["tribal", "graveyard", "tokens", "sacrifice", "counters", "spellPayoff", "keywordLord", "lifegain"] as const
     for (const tag of tags) {
       allTags.set(`provider-${tag}`, { [tag]: "provider" as const })
       allTags.set(`payoff-${tag}`, { [tag]: "payoff" as const })

@@ -640,7 +640,6 @@ function evaluateDeckScore(
   const earlyGameStability = metrics.curveScore + metrics.earlyBoardPresence * 0.7
   const creatureStructure = metrics.creatureCount * 0.35 - metrics.nonCreatureSaturation * 2.5
   const interactionQuality = metrics.interactionCount * 0.9 + metrics.removalDensity * 5
-  const topEndBurden = -metrics.topEndLoad * 9 - Math.max(0, metrics.expensiveSpells - 4) * 0.6
   const colorDepthResilience =
     candidateEvaluation.poolStrength * 0.12 -
     (candidateEvaluation.candidate.splash ? metrics.splashStrain * 0.5 : 0)
@@ -650,10 +649,18 @@ function evaluateDeckScore(
     ? computeSynergyBonus(mainDeck, synergyContext.allTags)
     : { bonus: 0, breakdown: {} }
 
+  // When expensiveSpells synergy is active (Prismari-style opus archetype), the deck is
+  // intentionally top-heavy — halve the topEndLoad multiplier and raise the free threshold.
+  const expensiveSpellSynergyActive = synergyBreakdown.expensiveSpells !== undefined
+  const topEndBurden =
+    -metrics.topEndLoad * (expensiveSpellSynergyActive ? 4.5 : 9) -
+    Math.max(0, metrics.expensiveSpells - (expensiveSpellSynergyActive ? 7 : 4)) * 0.6
+
   let penalties = 0
   if (metrics.creatureCount < 12) penalties += (12 - metrics.creatureCount) * 1.5
   if (metrics.cheapPlays < 5) penalties += (5 - metrics.cheapPlays) * 1.2
-  if (metrics.expensiveSpells > 5) penalties += (metrics.expensiveSpells - 5) * 0.9
+  if (metrics.expensiveSpells > (expensiveSpellSynergyActive ? 8 : 5))
+    penalties += (metrics.expensiveSpells - (expensiveSpellSynergyActive ? 8 : 5)) * 0.9
   penalties += flattened.reduce(
     (sum, card) => sum + (card.role.maxSingleColorPip >= 2 && card.cmc <= 3 ? 0.4 : 0),
     0,

@@ -99,7 +99,10 @@ const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
   counters: "+1/+1 counters",
   tokens: "Tokens",
   sacrifice: "Sacrifice",
-  lifelink: "Lifelink",
+  lifegain: "Life gain",
+  repartee: "Repartee",
+  expensiveSpells: "Expensive spells",
+  converge: "Converge",
 }
 
 function formatColors(deck: RankedDeckResult) {

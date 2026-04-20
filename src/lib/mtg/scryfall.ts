@@ -6,6 +6,7 @@ export type ScryfallCard = {
   keywords: string[]
   type_line: string
   layout?: string
+  cmc?: number
   card_faces?: {
     name: string
     oracle_text: string
