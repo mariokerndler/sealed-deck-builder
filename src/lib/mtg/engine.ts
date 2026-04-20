@@ -5,6 +5,7 @@ import {
   EMPTY_COLOR_COUNTS,
 } from "@/lib/mtg/constants"
 import type {
+  CardSynergyTags,
   ColorCountMap,
   ColorSymbol,
   DeckCard,
@@ -19,8 +20,15 @@ import type {
   RatingMergeResult,
   ScoreBreakdown,
   SearchConfig,
+  SynergyBreakdown,
 } from "@/lib/mtg/types"
 import { COLOR_SYMBOLS } from "@/lib/mtg/types"
+import type { ScryfallDataMap } from "@/lib/mtg/scryfall"
+import { buildAllTags, computeSynergyBonus } from "@/lib/mtg/synergy"
+
+type SynergyContext = {
+  allTags: Map<string, CardSynergyTags>
+}
 
 type CandidateConfig = DeckColorIdentity
 
@@ -622,7 +630,8 @@ function evaluateDeckScore(
   candidateEvaluation: CandidateEvaluation,
   profile: VariantProfile,
   basicLands: ColorCountMap,
-): { total: number; metrics: DeckMetrics; breakdown: ScoreBreakdown } {
+  synergyContext?: SynergyContext,
+): { total: number; metrics: DeckMetrics; breakdown: ScoreBreakdown; synergyBreakdown: SynergyBreakdown } {
   const metrics = getDeckMetrics(mainDeck, candidateEvaluation.candidate, basicLands)
   const flattened = flattenDeck(mainDeck)
 
@@ -636,6 +645,10 @@ function evaluateDeckScore(
     candidateEvaluation.poolStrength * 0.12 -
     (candidateEvaluation.candidate.splash ? metrics.splashStrain * 0.5 : 0)
   const deckCoherence = scoreDeckShape(metrics, profile)
+
+  const { bonus: synergyBonus, breakdown: synergyBreakdown } = synergyContext
+    ? computeSynergyBonus(mainDeck, synergyContext.allTags)
+    : { bonus: 0, breakdown: {} }
 
   let penalties = 0
   if (metrics.creatureCount < 12) penalties += (12 - metrics.creatureCount) * 1.5
@@ -655,12 +668,14 @@ function evaluateDeckScore(
     interactionQuality +
     topEndBurden +
     colorDepthResilience +
+    synergyBonus +
     deckCoherence -
     penalties
 
   return {
     total: Number(total.toFixed(2)),
     metrics,
+    synergyBreakdown,
     breakdown: {
       cardQuality: Number(cardQuality.toFixed(2)),
       manaConsistency: Number(manaConsistency.toFixed(2)),
@@ -669,6 +684,7 @@ function evaluateDeckScore(
       interactionQuality: Number(interactionQuality.toFixed(2)),
       topEndBurden: Number(topEndBurden.toFixed(2)),
       colorDepthResilience: Number(colorDepthResilience.toFixed(2)),
+      synergyBonus: Number(synergyBonus.toFixed(2)),
       deckCoherence: Number(deckCoherence.toFixed(2)),
       penalties: Number(penalties.toFixed(2)),
       total: Number(total.toFixed(2)),
@@ -831,6 +847,7 @@ function refineDeck(
   candidateEvaluation: CandidateEvaluation,
   profile: VariantProfile,
   config: SearchConfig,
+  synergyContext?: SynergyContext,
 ): DeckCard[] {
   let deckCards = flattenDeck(baseline)
 
@@ -851,7 +868,7 @@ function refineDeck(
         config,
       )
     const basics = suggestBasicLands(merged, candidateEvaluation.candidate, landCount)
-    return evaluateDeckScore(merged, candidateEvaluation, profile, basics).total
+    return evaluateDeckScore(merged, candidateEvaluation, profile, basics, synergyContext).total
   }
 
   const enforceThresholds = () => {
@@ -971,7 +988,14 @@ function buildExplanation(
           ? "it leans a little hard on noncreature spells"
           : "it does not have quite as much raw depth as the very best pools"
 
-  return `This ${colorLabel} ${profile.label} build ranked highly because the pool is deep enough to support it and its biggest edge is ${biggestStrength}. The deck is defined by ${topCards.join(", ")}, while the main thing keeping it from scoring even higher is that ${weakness}.`
+  const topSynergy = Object.entries(deck.synergyBreakdown)
+    .sort(([, a], [, b]) => b - a)[0]
+  const synergyClause =
+    topSynergy && topSynergy[1] >= 1.0
+      ? ` It also benefits from meaningful ${topSynergy[0]} synergy.`
+      : ""
+
+  return `This ${colorLabel} ${profile.label} build ranked highly because the pool is deep enough to support it and its biggest edge is ${biggestStrength}. The deck is defined by ${topCards.join(", ")}, while the main thing keeping it from scoring even higher is that ${weakness}.${synergyClause}`
 }
 
 function getDeckDiagnostics(
@@ -1046,12 +1070,16 @@ export function evaluateSealedPool(
   poolEntries: PoolEntry[],
   ratings: RatingMergeResult,
   searchConfig: Partial<SearchConfig> = {},
+  scryfallData?: ScryfallDataMap,
 ): {
   decks: RankedDeckResult[]
   missingCards: MissingPoolCard[]
 } {
   const config = { ...DEFAULT_SEARCH_CONFIG, ...searchConfig }
   const { poolCards, missingCards } = resolvePool(poolEntries, ratings)
+  const synergyContext: SynergyContext | undefined = scryfallData
+    ? { allTags: buildAllTags(poolCards, scryfallData) }
+    : undefined
   const rankedCandidates = rankCandidateConfigs(poolCards, config)
   const rankedDecks: RankedDeckResult[] = []
 
@@ -1060,7 +1088,7 @@ export function evaluateSealedPool(
       const baseline = buildBaselineDeck(candidateEvaluation, profile, config)
       const refined = normalizeDeckSize(
         enforcePoolLegality(
-          refineDeck(baseline, candidateEvaluation, profile, config),
+          refineDeck(baseline, candidateEvaluation, profile, config, synergyContext),
           candidateEvaluation,
         ),
         candidateEvaluation,
@@ -1078,7 +1106,7 @@ export function evaluateSealedPool(
         config,
       )
       const basicLands = suggestBasicLands(refined, candidateEvaluation.candidate, landCount)
-      const evaluation = evaluateDeckScore(refined, candidateEvaluation, profile, basicLands)
+      const evaluation = evaluateDeckScore(refined, candidateEvaluation, profile, basicLands, synergyContext)
       const fullDeck = [
         ...refined,
         ...COLOR_SYMBOLS.filter((color) => basicLands[color] > 0).map((color) => ({
@@ -1132,6 +1160,7 @@ export function evaluateSealedPool(
         diagnostics: [],
         metrics: evaluation.metrics,
         scoreBreakdown: evaluation.breakdown,
+        synergyBreakdown: evaluation.synergyBreakdown,
       }
 
       deck.explanation = buildExplanation(deck, profile)

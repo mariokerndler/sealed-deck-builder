@@ -1,7 +1,8 @@
-import { startTransition, useMemo, useState, type ChangeEvent } from "react"
+import { startTransition, useEffect, useMemo, useState, type ChangeEvent } from "react"
 import {
   CheckCircle2Icon,
   CopyIcon,
+  DatabaseIcon,
   FileCode2Icon,
   InfoIcon,
   Layers3Icon,
@@ -57,7 +58,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { COLOR_NAMES, describeManaBase, evaluateSealedPool, mergeRatingFiles, parsePoolText, parseRatingFileContent, type RankedDeckResult, type RatingFileParseResult } from "@/lib/mtg"
+import { COLOR_NAMES, batchFetchCards, describeManaBase, evaluateSealedPool, mergeRatingFiles, parsePoolText, parseRatingFileContent, type RankedDeckResult, type RatingFileParseResult, type ScryfallDataMap, type SynergyTag } from "@/lib/mtg"
 
 const SAMPLE_POOL = `1 Harsh Annotation
 1 Shattered Acolyte
@@ -89,6 +90,17 @@ const SAMPLE_POOL = `1 Harsh Annotation
 1 Follow the Lumarets
 1 Shopkeeper's Bane
 1 Root Manipulation`
+
+const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
+  tribal: "Tribal",
+  spellPayoff: "Spell payoff",
+  keywordLord: "Keyword lord",
+  graveyard: "Graveyard",
+  counters: "+1/+1 counters",
+  tokens: "Tokens",
+  sacrifice: "Sacrifice",
+  lifelink: "Lifelink",
+}
 
 function formatColors(deck: RankedDeckResult) {
   const names = deck.colors.base.map((color) => COLOR_NAMES[color])
@@ -123,6 +135,10 @@ function App() {
   const [missingCards, setMissingCards] = useState<string[]>([])
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [copiedDeckId, setCopiedDeckId] = useState<string | null>(null)
+  const [scryfallData, setScryfallData] = useState<ScryfallDataMap>(new Map())
+  const [isFetchingScryfall, setIsFetchingScryfall] = useState(false)
+  const [scryfallErrors, setScryfallErrors] = useState<string[]>([])
+  const [scryfallProgress, setScryfallProgress] = useState<{ fetched: number; total: number } | null>(null)
 
   const mergedRatings = useMemo(() => mergeRatingFiles(ratingFiles), [ratingFiles])
   const parsedPool = useMemo(() => parsePoolText(poolText), [poolText])
@@ -130,6 +146,29 @@ function App() {
     () => ratingFiles.reduce((sum, file) => sum + file.cards.length, 0),
     [ratingFiles],
   )
+
+  useEffect(() => {
+    setScryfallData(new Map())
+    setScryfallErrors([])
+    setScryfallProgress(null)
+  }, [poolText])
+
+  async function handleFetchCardData() {
+    if (parsedPool.length === 0) return
+    setIsFetchingScryfall(true)
+    setScryfallErrors([])
+    const names = parsedPool.map((entry) => entry.inputName)
+    const result = await batchFetchCards(names, (fetched, total) => {
+      setScryfallProgress({ fetched, total })
+    })
+    setScryfallData(result.data)
+    setScryfallErrors([
+      ...result.fetchErrors,
+      ...result.failedNames.map((n) => `Not found in Scryfall: ${n}`),
+    ])
+    setIsFetchingScryfall(false)
+    setScryfallProgress(null)
+  }
 
   async function handleFileUpload(event: ChangeEvent<HTMLInputElement>) {
     const fileList = Array.from(event.target.files ?? [])
@@ -165,7 +204,12 @@ function App() {
 
     setIsEvaluating(true)
     startTransition(() => {
-      const evaluation = evaluateSealedPool(parsedPool, mergedRatings)
+      const evaluation = evaluateSealedPool(
+        parsedPool,
+        mergedRatings,
+        {},
+        scryfallData.size > 0 ? scryfallData : undefined,
+      )
       setResults(evaluation.decks)
       setMissingCards(
         evaluation.missingCards.map(
@@ -181,6 +225,8 @@ function App() {
     setFileErrors([])
     setResults([])
     setMissingCards([])
+    setScryfallData(new Map())
+    setScryfallErrors([])
   }
 
   async function copyText(text: string, deckId: string) {
@@ -266,12 +312,48 @@ function App() {
                   </Field>
                 </FieldGroup>
               </CardContent>
+              {scryfallErrors.length > 0 && (
+                <div className="px-6 pb-2">
+                  <Alert variant="destructive">
+                    <TriangleAlertIcon />
+                    <AlertTitle>Some cards could not be fetched from Scryfall</AlertTitle>
+                    <AlertDescription className="flex flex-col gap-1">
+                      {scryfallErrors.slice(0, 5).map((error) => (
+                        <span key={error}>{error}</span>
+                      ))}
+                      {scryfallErrors.length > 5 && <span>…and {scryfallErrors.length - 5} more</span>}
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
               <CardFooter className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="secondary">{parsedPool.length} entries parsed</Badge>
-                <Button variant="outline" onClick={() => setPoolText(SAMPLE_POOL)}>
-                  <SparklesIcon data-icon="inline-start" />
-                  Load sample pool
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={() => setPoolText(SAMPLE_POOL)}>
+                    <SparklesIcon data-icon="inline-start" />
+                    Load sample pool
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleFetchCardData}
+                    disabled={parsedPool.length === 0 || isFetchingScryfall}
+                  >
+                    {isFetchingScryfall
+                      ? <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+                      : <DatabaseIcon data-icon="inline-start" />}
+                    {isFetchingScryfall
+                      ? `Fetching… (${scryfallProgress?.fetched ?? 0}/${scryfallProgress?.total ?? parsedPool.length})`
+                      : scryfallData.size > 0
+                        ? "Synergy data ready"
+                        : "Fetch card data"}
+                  </Button>
+                  {scryfallData.size > 0 && !isFetchingScryfall && (
+                    <Badge variant="secondary" className="gap-1">
+                      <CheckCircle2Icon className="h-3 w-3" />
+                      {scryfallData.size} cards enriched
+                    </Badge>
+                  )}
+                </div>
               </CardFooter>
             </Card>
 
@@ -430,8 +512,13 @@ function App() {
                                   </Badge>
                                 ))}
                               </div>
-                              <CardTitle className="text-2xl">
+                              <CardTitle className="flex flex-wrap items-baseline gap-2 text-2xl">
                                 Score {deck.totalScore.toFixed(2)}
+                                {deck.scoreBreakdown.synergyBonus > 0 && (
+                                  <span className="text-base font-normal text-emerald-600">
+                                    +{deck.scoreBreakdown.synergyBonus.toFixed(1)} synergy
+                                  </span>
+                                )}
                               </CardTitle>
                               <CardDescription className="max-w-2xl text-sm leading-relaxed text-stone-700">
                                 {deck.explanation}
@@ -530,6 +617,31 @@ function App() {
                                 <AccordionItem value="summary">
                                   <AccordionTrigger>Quick explanation</AccordionTrigger>
                                   <AccordionContent>{deck.explanation}</AccordionContent>
+                                </AccordionItem>
+                                <AccordionItem value="synergy">
+                                  <AccordionTrigger>Synergy analysis</AccordionTrigger>
+                                  <AccordionContent>
+                                    {Object.keys(deck.synergyBreakdown).length > 0 ? (
+                                      <div className="flex flex-col gap-2">
+                                        {(Object.entries(deck.synergyBreakdown) as [SynergyTag, number][])
+                                          .sort(([, a], [, b]) => b - a)
+                                          .map(([tag, score]) => (
+                                            <div key={tag} className="flex items-center justify-between text-sm">
+                                              <span className="text-stone-700">{SYNERGY_TAG_LABELS[tag]}</span>
+                                              <Badge variant="secondary" className="text-emerald-700">
+                                                +{score.toFixed(1)}
+                                              </Badge>
+                                            </div>
+                                          ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground">
+                                        {scryfallData.size > 0
+                                          ? "No meaningful synergies detected for this deck."
+                                          : "Fetch card data to see synergy analysis."}
+                                      </p>
+                                    )}
+                                  </AccordionContent>
                                 </AccordionItem>
                                 <AccordionItem value="diagnostics">
                                   <AccordionTrigger>Detailed deck notes</AccordionTrigger>

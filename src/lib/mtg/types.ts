@@ -108,6 +108,7 @@ export type ScoreBreakdown = {
   interactionQuality: number
   topEndBurden: number
   colorDepthResilience: number
+  synergyBonus: number
   deckCoherence: number
   penalties: number
   total: number
@@ -127,7 +128,24 @@ export type RankedDeckResult = {
   diagnostics: string[]
   metrics: DeckMetrics
   scoreBreakdown: ScoreBreakdown
+  synergyBreakdown: SynergyBreakdown
 }
+
+export type SynergyTag =
+  | "tribal"
+  | "spellPayoff"
+  | "keywordLord"
+  | "graveyard"
+  | "counters"
+  | "tokens"
+  | "sacrifice"
+  | "lifelink"
+
+export type SynergyRole = "provider" | "payoff" | "both"
+
+export type CardSynergyTags = Partial<Record<SynergyTag, SynergyRole>>
+
+export type SynergyBreakdown = Partial<Record<SynergyTag, number>>
 
 export type SearchConfig = {
   deckSize: number

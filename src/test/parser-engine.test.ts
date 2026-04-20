@@ -234,3 +234,93 @@ describe("sealed engine", () => {
     expect((hugeMaybe?.quantity ?? 0)).toBeLessThan(4)
   })
 })
+
+describe("synergy engine integration", () => {
+  const RATINGS_FILE = `var SYNERGY = [
+    {name:"Token Smith", castingcost1:"2W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.0", cmc:"3", colors:[1,0,0,0,0]},
+    {name:"Banner Carrier", castingcost1:"1W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.1", cmc:"2", colors:[1,0,0,0,0]},
+    {name:"Rally Cry", castingcost1:"2W", castingcost2:"none", type:"Sorcery", rarity:"U", myrating:"3.2", cmc:"3", colors:[1,0,0,0,0]},
+    {name:"Blade Guardian", castingcost1:"1W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.9", cmc:"2", colors:[1,0,0,0,0]},
+    {name:"Sword Initiate", castingcost1:"W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.8", cmc:"1", colors:[1,0,0,0,0]},
+    {name:"Order Captain", castingcost1:"3W", castingcost2:"none", type:"Creature", rarity:"U", myrating:"3.3", cmc:"4", colors:[1,0,0,0,0]},
+    {name:"Shield Lesson", castingcost1:"2W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.9", cmc:"3", colors:[1,0,0,0,0]},
+    {name:"Neutral Filler", castingcost1:"3", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.6", cmc:"3", colors:[0,0,0,0,0]}
+  ]`
+
+  const LARGE_WHITE_POOL = `
+    4 Token Smith
+    4 Banner Carrier
+    4 Rally Cry
+    4 Blade Guardian
+    4 Sword Initiate
+    4 Order Captain
+    3 Shield Lesson
+    5 Neutral Filler
+  `
+
+  it("produces synergyBonus of 0 on all decks when no Scryfall data is provided", () => {
+    const ratings = mergeRatingFiles([parseRatingFileContent(RATINGS_FILE, "synergy.js")])
+    const pool = parsePoolText(LARGE_WHITE_POOL)
+    const result = evaluateSealedPool(pool, ratings)
+
+    expect(result.decks.length).toBeGreaterThan(0)
+    for (const deck of result.decks) {
+      expect(deck.scoreBreakdown.synergyBonus).toBe(0)
+      expect(Object.keys(deck.synergyBreakdown)).toHaveLength(0)
+    }
+  })
+
+  it("produces synergyBonus > 0 when Scryfall data reveals token synergy", () => {
+    const ratings = mergeRatingFiles([parseRatingFileContent(RATINGS_FILE, "synergy.js")])
+    const pool = parsePoolText(LARGE_WHITE_POOL)
+
+    // Build a mock ScryfallDataMap with token synergy on several cards
+    const scryfallData = new Map([
+      [
+        "token smith",
+        {
+          name: "Token Smith",
+          type_line: "Creature",
+          keywords: [],
+          oracle_text: "When Token Smith enters, create a 1/1 white Soldier creature token.",
+        },
+      ],
+      [
+        "banner carrier",
+        {
+          name: "Banner Carrier",
+          type_line: "Creature",
+          keywords: [],
+          oracle_text: "When Banner Carrier enters, create a 1/1 white Soldier creature token.",
+        },
+      ],
+      [
+        "order captain",
+        {
+          name: "Order Captain",
+          type_line: "Creature",
+          keywords: [],
+          oracle_text: "Whenever another creature enters, each token you control gets +1/+1 until end of turn.",
+        },
+      ],
+    ])
+
+    const result = evaluateSealedPool(pool, ratings, {}, scryfallData)
+
+    expect(result.decks.length).toBeGreaterThan(0)
+    const topDeck = result.decks[0]
+    expect(topDeck?.scoreBreakdown.synergyBonus).toBeGreaterThan(0)
+    expect(topDeck?.synergyBreakdown.tokens).toBeDefined()
+  })
+
+  it("synergyBreakdown is always present even when empty", () => {
+    const ratings = mergeRatingFiles([parseRatingFileContent(RATINGS_FILE, "synergy.js")])
+    const pool = parsePoolText(LARGE_WHITE_POOL)
+    const result = evaluateSealedPool(pool, ratings)
+
+    for (const deck of result.decks) {
+      expect(deck.synergyBreakdown).toBeDefined()
+      expect(typeof deck.synergyBreakdown).toBe("object")
+    }
+  })
+})
