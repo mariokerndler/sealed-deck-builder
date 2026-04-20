@@ -21,6 +21,7 @@ import type {
   ScoreBreakdown,
   SearchConfig,
   SynergyBreakdown,
+  SynergyDetail,
 } from "@/lib/mtg/types"
 import { COLOR_SYMBOLS } from "@/lib/mtg/types"
 import type { ScryfallDataMap } from "@/lib/mtg/scryfall"
@@ -631,7 +632,7 @@ function evaluateDeckScore(
   profile: VariantProfile,
   basicLands: ColorCountMap,
   synergyContext?: SynergyContext,
-): { total: number; metrics: DeckMetrics; breakdown: ScoreBreakdown; synergyBreakdown: SynergyBreakdown } {
+): { total: number; metrics: DeckMetrics; breakdown: ScoreBreakdown; synergyBreakdown: SynergyBreakdown; synergyDetail: SynergyDetail } {
   const metrics = getDeckMetrics(mainDeck, candidateEvaluation.candidate, basicLands)
   const flattened = flattenDeck(mainDeck)
 
@@ -645,9 +646,9 @@ function evaluateDeckScore(
     (candidateEvaluation.candidate.splash ? metrics.splashStrain * 0.5 : 0)
   const deckCoherence = scoreDeckShape(metrics, profile)
 
-  const { bonus: synergyBonus, breakdown: synergyBreakdown } = synergyContext
+  const { bonus: synergyBonus, breakdown: synergyBreakdown, detail: synergyDetail } = synergyContext
     ? computeSynergyBonus(mainDeck, synergyContext.allTags)
-    : { bonus: 0, breakdown: {} }
+    : { bonus: 0, breakdown: {}, detail: {} }
 
   // When expensiveSpells synergy is active (Prismari-style opus archetype), the deck is
   // intentionally top-heavy — halve the topEndLoad multiplier and raise the free threshold.
@@ -683,6 +684,7 @@ function evaluateDeckScore(
     total: Number(total.toFixed(2)),
     metrics,
     synergyBreakdown,
+    synergyDetail,
     breakdown: {
       cardQuality: Number(cardQuality.toFixed(2)),
       manaConsistency: Number(manaConsistency.toFixed(2)),
@@ -1168,6 +1170,7 @@ export function evaluateSealedPool(
         metrics: evaluation.metrics,
         scoreBreakdown: evaluation.breakdown,
         synergyBreakdown: evaluation.synergyBreakdown,
+        synergyDetail: evaluation.synergyDetail,
       }
 
       deck.explanation = buildExplanation(deck, profile)

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState, type ChangeEvent } from "react"
+import { startTransition, useMemo, useState, type ChangeEvent } from "react"
 import {
   CheckCircle2Icon,
   CopyIcon,
@@ -141,6 +141,7 @@ function App() {
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [copiedDeckId, setCopiedDeckId] = useState<string | null>(null)
   const [scryfallData, setScryfallData] = useState<ScryfallDataMap>(new Map())
+  const [scryfallSource, setScryfallSource] = useState<"preset" | "fetched" | null>(null)
   const [isFetchingScryfall, setIsFetchingScryfall] = useState(false)
   const [scryfallErrors, setScryfallErrors] = useState<string[]>([])
   const [scryfallProgress, setScryfallProgress] = useState<{ fetched: number; total: number } | null>(null)
@@ -152,11 +153,6 @@ function App() {
     [ratingFiles],
   )
 
-  useEffect(() => {
-    setScryfallData(new Map())
-    setScryfallErrors([])
-    setScryfallProgress(null)
-  }, [poolText])
 
   async function handleFetchCardData() {
     if (parsedPool.length === 0) return
@@ -167,6 +163,7 @@ function App() {
       setScryfallProgress({ fetched, total })
     })
     setScryfallData(result.data)
+    setScryfallSource("fetched")
     setScryfallErrors([
       ...result.fetchErrors,
       ...result.failedNames.map((n) => `Not found in Scryfall: ${n}`),
@@ -205,6 +202,9 @@ function App() {
     try {
       const parsed = parseRatingFileContent(preset.content, preset.name)
       setRatingFiles((current) => [...current, parsed])
+      setScryfallData(preset.scryfallData)
+      setScryfallSource("preset")
+      setScryfallErrors([])
       setFileErrors([])
     } catch (error) {
       setFileErrors([`${preset.name}: ${error instanceof Error ? error.message : "Could not parse preset."}`])
@@ -241,6 +241,7 @@ function App() {
     setResults([])
     setMissingCards([])
     setScryfallData(new Map())
+    setScryfallSource(null)
     setScryfallErrors([])
   }
 
@@ -348,21 +349,28 @@ function App() {
                     <SparklesIcon data-icon="inline-start" />
                     Load sample pool
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleFetchCardData}
-                    disabled={parsedPool.length === 0 || isFetchingScryfall}
-                  >
-                    {isFetchingScryfall
-                      ? <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-                      : <DatabaseIcon data-icon="inline-start" />}
-                    {isFetchingScryfall
-                      ? `Fetching… (${scryfallProgress?.fetched ?? 0}/${scryfallProgress?.total ?? parsedPool.length})`
-                      : scryfallData.size > 0
-                        ? "Synergy data ready"
-                        : "Fetch card data"}
-                  </Button>
-                  {scryfallData.size > 0 && !isFetchingScryfall && (
+                  {scryfallSource === "preset" ? (
+                    <Badge variant="secondary" className="gap-1 text-emerald-700">
+                      <CheckCircle2Icon className="h-3.5 w-3.5" />
+                      Card data bundled
+                    </Badge>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={handleFetchCardData}
+                      disabled={parsedPool.length === 0 || isFetchingScryfall}
+                    >
+                      {isFetchingScryfall
+                        ? <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+                        : <DatabaseIcon data-icon="inline-start" />}
+                      {isFetchingScryfall
+                        ? `Fetching… (${scryfallProgress?.fetched ?? 0}/${scryfallProgress?.total ?? parsedPool.length})`
+                        : scryfallSource === "fetched"
+                          ? "Re-fetch card data"
+                          : "Fetch card data"}
+                    </Button>
+                  )}
+                  {scryfallSource === "fetched" && scryfallData.size > 0 && !isFetchingScryfall && (
                     <Badge variant="secondary" className="gap-1">
                       <CheckCircle2Icon className="h-3 w-3" />
                       {scryfallData.size} cards enriched
@@ -664,17 +672,36 @@ function App() {
                                   <AccordionTrigger>Synergy analysis</AccordionTrigger>
                                   <AccordionContent>
                                     {Object.keys(deck.synergyBreakdown).length > 0 ? (
-                                      <div className="flex flex-col gap-2">
+                                      <div className="flex flex-col gap-3">
                                         {(Object.entries(deck.synergyBreakdown) as [SynergyTag, number][])
                                           .sort(([, a], [, b]) => b - a)
-                                          .map(([tag, score]) => (
-                                            <div key={tag} className="flex items-center justify-between text-sm">
-                                              <span className="text-stone-700">{SYNERGY_TAG_LABELS[tag]}</span>
-                                              <Badge variant="secondary" className="text-emerald-700">
-                                                +{score.toFixed(1)}
-                                              </Badge>
-                                            </div>
-                                          ))}
+                                          .map(([tag, score]) => {
+                                            const tagDetail = deck.synergyDetail[tag]
+                                            const providers = tagDetail?.contributors.filter((c) => c.role === "provider" || c.role === "both") ?? []
+                                            const payoffs = tagDetail?.contributors.filter((c) => c.role === "payoff" || c.role === "both") ?? []
+                                            return (
+                                              <div key={tag} className="flex flex-col gap-1">
+                                                <div className="flex items-center justify-between text-sm">
+                                                  <span className="font-medium text-stone-800">{SYNERGY_TAG_LABELS[tag]}</span>
+                                                  <Badge variant="secondary" className="text-emerald-700">
+                                                    +{score.toFixed(1)}
+                                                  </Badge>
+                                                </div>
+                                                {providers.length > 0 && (
+                                                  <p className="text-xs text-muted-foreground pl-2">
+                                                    <span className="text-stone-500 font-medium">Provides: </span>
+                                                    {providers.map((c) => c.quantity > 1 ? `${c.displayName} ×${c.quantity}` : c.displayName).join(", ")}
+                                                  </p>
+                                                )}
+                                                {payoffs.length > 0 && (
+                                                  <p className="text-xs text-muted-foreground pl-2">
+                                                    <span className="text-stone-500 font-medium">Payoffs: </span>
+                                                    {payoffs.map((c) => c.quantity > 1 ? `${c.displayName} ×${c.quantity}` : c.displayName).join(", ")}
+                                                  </p>
+                                                )}
+                                              </div>
+                                            )
+                                          })}
                                       </div>
                                     ) : (
                                       <p className="text-sm text-muted-foreground">

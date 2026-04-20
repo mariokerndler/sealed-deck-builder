@@ -1,4 +1,4 @@
-import type { CardSynergyTags, DeckCard, PoolCard, SynergyBreakdown, SynergyRole, SynergyTag } from "@/lib/mtg/types"
+import type { CardSynergyTags, DeckCard, PoolCard, SynergyBreakdown, SynergyCardContributor, SynergyDetail, SynergyRole, SynergyTag } from "@/lib/mtg/types"
 import type { ScryfallCard, ScryfallDataMap } from "@/lib/mtg/scryfall"
 
 // --- Regex patterns (compiled once) ---
@@ -303,38 +303,50 @@ const SYNERGY_BONUS_CAP = 8.0
 export function computeSynergyBonus(
   deckCards: DeckCard[],
   allTags: Map<string, CardSynergyTags>,
-): { bonus: number; breakdown: SynergyBreakdown } {
+): { bonus: number; breakdown: SynergyBreakdown; detail: SynergyDetail } {
   const breakdown: SynergyBreakdown = {}
+  const detail: SynergyDetail = {}
   let total = 0
 
   for (const tag of ALL_TAGS) {
     let providerCount = 0
     let payoffCount = 0
+    const contributors: SynergyCardContributor[] = []
 
     for (const entry of deckCards) {
       const cardTags = allTags.get(entry.card.normalizedName)
       if (!cardTags) continue
       const role: SynergyRole | undefined = cardTags[tag]
-      if (role === "provider") providerCount += entry.quantity
-      else if (role === "payoff") payoffCount += entry.quantity
-      else if (role === "both") {
+      if (role === "provider") {
+        providerCount += entry.quantity
+        contributors.push({ name: entry.card.normalizedName, displayName: entry.card.displayName, quantity: entry.quantity, role: "provider" })
+      } else if (role === "payoff") {
+        payoffCount += entry.quantity
+        contributors.push({ name: entry.card.normalizedName, displayName: entry.card.displayName, quantity: entry.quantity, role: "payoff" })
+      } else if (role === "both") {
         providerCount += entry.quantity
         payoffCount += entry.quantity
+        contributors.push({ name: entry.card.normalizedName, displayName: entry.card.displayName, quantity: entry.quantity, role: "both" })
       }
     }
 
-    const fires =
-      (providerCount >= 2 && payoffCount >= 1) || providerCount + payoffCount >= 3
+    // Tribal requires an explicit payoff (lord/anthem/synergy card) — a pile of
+    // same-type creatures sharing a subtype is not a synergy on its own.
+    const fires = tag === "tribal"
+      ? providerCount >= 2 && payoffCount >= 1
+      : (providerCount >= 2 && payoffCount >= 1) || providerCount + payoffCount >= 3
     if (!fires) continue
 
     const density = Math.min(providerCount + payoffCount, 10) / 10
     const contribution = density * TAG_WEIGHTS[tag]
     breakdown[tag] = Number(contribution.toFixed(2))
+    detail[tag] = { score: Number(contribution.toFixed(2)), contributors }
     total += contribution
   }
 
   return {
     bonus: Number(Math.min(total, SYNERGY_BONUS_CAP).toFixed(2)),
     breakdown,
+    detail,
   }
 }

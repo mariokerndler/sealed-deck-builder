@@ -129,6 +129,7 @@ export type RankedDeckResult = {
   metrics: DeckMetrics
   scoreBreakdown: ScoreBreakdown
   synergyBreakdown: SynergyBreakdown
+  synergyDetail: SynergyDetail
 }
 
 export type SynergyTag =
@@ -149,6 +150,20 @@ export type SynergyRole = "provider" | "payoff" | "both"
 export type CardSynergyTags = Partial<Record<SynergyTag, SynergyRole>>
 
 export type SynergyBreakdown = Partial<Record<SynergyTag, number>>
+
+export type SynergyCardContributor = {
+  name: string
+  displayName: string
+  quantity: number
+  role: SynergyRole
+}
+
+export type SynergyTagDetail = {
+  score: number
+  contributors: SynergyCardContributor[]
+}
+
+export type SynergyDetail = Partial<Record<SynergyTag, SynergyTagDetail>>
 
 export type SearchConfig = {
   deckSize: number

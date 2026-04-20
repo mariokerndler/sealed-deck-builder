@@ -50,6 +50,14 @@ function indexCard(card: ScryfallCard, data: ScryfallDataMap): void {
   }
 }
 
+export function buildScryfallDataMap(cards: ScryfallCard[]): ScryfallDataMap {
+  const data: ScryfallDataMap = new Map()
+  for (const card of cards) {
+    indexCard(card, data)
+  }
+  return data
+}
+
 export async function batchFetchCards(
   names: string[],
   onProgress?: (fetched: number, total: number) => void,
