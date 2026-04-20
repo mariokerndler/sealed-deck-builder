@@ -109,7 +109,10 @@ const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
 
 function formatColors(deck: RankedDeckResult) {
   const names = deck.colors.base.map((color) => COLOR_NAMES[color])
-  return deck.colors.splash ? [...names, `${COLOR_NAMES[deck.colors.splash]} splash`] : names
+  // Only show the splash color if it actually has basic lands — the optimizer may have
+  // swapped out all splash cards, leaving the candidate splash config but no real splash.
+  const hasSplash = deck.colors.splash && deck.basicLands[deck.colors.splash] > 0
+  return hasSplash ? [...names, `${COLOR_NAMES[deck.colors.splash!]} splash`] : names
 }
 
 function formatDeckListForCopy(deck: RankedDeckResult) {
@@ -564,6 +567,11 @@ function App() {
                               </div>
                               <CardTitle className="flex flex-wrap items-baseline gap-2 text-2xl">
                                 Score {deck.totalScore.toFixed(2)}
+                                {deck.scoreBreakdown.fixingBonus > 0 && (
+                                  <span className="text-base font-normal text-blue-600">
+                                    +{deck.scoreBreakdown.fixingBonus.toFixed(1)} fixing
+                                  </span>
+                                )}
                                 {deck.scoreBreakdown.synergyBonus > 0 && (
                                   <span className="text-base font-normal text-emerald-600">
                                     +{deck.scoreBreakdown.synergyBonus.toFixed(1)} synergy

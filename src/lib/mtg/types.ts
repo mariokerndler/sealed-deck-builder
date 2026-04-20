@@ -108,6 +108,7 @@ export type ScoreBreakdown = {
   interactionQuality: number
   topEndBurden: number
   colorDepthResilience: number
+  fixingBonus: number
   synergyBonus: number
   deckCoherence: number
   penalties: number

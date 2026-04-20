@@ -159,10 +159,12 @@ function getAllCandidateConfigs(config: SearchConfig): CandidateConfig[] {
 }
 
 function getFixingValue(card: RatingCard, candidate: CandidateConfig): number {
-  if (!card.role.isFixing || card.isLand) {
-    return 0
-  }
-  return candidate.splash ? 1 : 0
+  if (!card.role.isFixing) return 0
+  const colorCount = candidate.base.length + (candidate.splash ? 1 : 0)
+  if (colorCount < 2) return 0
+  // Same value regardless of splash — the quality of splash cards drives the decision,
+  // not the presence of fixing.
+  return 1
 }
 
 function isCandidatePlayable(
@@ -292,7 +294,9 @@ function rankCandidateConfigs(
       poolStrength -= 1.1
       poolStrength -= Math.max(0, splashCards.length - 2) * 0.5
       poolStrength -= Math.max(0, splashPips - 2) * 0.35
-      poolStrength += fixingCount * 0.9
+      // Fixing reduces splash risk — partially offset the splash penalty, but don't
+      // make fixing alone justify a splash.
+      poolStrength += fixingCount * 0.35
     }
 
     return {
@@ -605,7 +609,7 @@ function suggestBasicLands(
     basics[recipient] += 1
   }
 
-  if (colors.splash && basics[colors.splash] === 0) {
+  if (colors.splash && basics[colors.splash] === 0 && requirements.sources[colors.splash] > 0) {
     const donor = [...colors.base].sort((a, b) => basics[b] - basics[a])[0]
     if (basics[donor] > 1) {
       basics[donor] -= 1
@@ -646,6 +650,15 @@ function evaluateDeckScore(
     (candidateEvaluation.candidate.splash ? metrics.splashStrain * 0.5 : 0)
   const deckCoherence = scoreDeckShape(metrics, profile)
 
+  // Reward decks for having mana fixing in the pool (dual/multi lands, mana dorks, etc.).
+  // The per-card rate and cap are the same for 2-color and 3-color — fixing improves mana
+  // reliability but shouldn't itself be a reason to splash a third color.
+  const colorCount =
+    candidateEvaluation.candidate.base.length + (candidateEvaluation.candidate.splash ? 1 : 0)
+  const fixingBonus = colorCount >= 2
+    ? Math.min(candidateEvaluation.fixingCount * 0.4, 2.0)
+    : 0
+
   const { bonus: synergyBonus, breakdown: synergyBreakdown, detail: synergyDetail } = synergyContext
     ? computeSynergyBonus(mainDeck, synergyContext.allTags)
     : { bonus: 0, breakdown: {}, detail: {} }
@@ -676,6 +689,7 @@ function evaluateDeckScore(
     interactionQuality +
     topEndBurden +
     colorDepthResilience +
+    fixingBonus +
     synergyBonus +
     deckCoherence -
     penalties
@@ -693,6 +707,7 @@ function evaluateDeckScore(
       interactionQuality: Number(interactionQuality.toFixed(2)),
       topEndBurden: Number(topEndBurden.toFixed(2)),
       colorDepthResilience: Number(colorDepthResilience.toFixed(2)),
+      fixingBonus: Number(fixingBonus.toFixed(2)),
       synergyBonus: Number(synergyBonus.toFixed(2)),
       deckCoherence: Number(deckCoherence.toFixed(2)),
       penalties: Number(penalties.toFixed(2)),
@@ -975,8 +990,9 @@ function buildExplanation(
   deck: RankedDeckResult,
   profile: VariantProfile,
 ): string {
-  const colorLabel = deck.colors.splash
-    ? `${COLOR_NAMES[deck.colors.base[0]]}-${COLOR_NAMES[deck.colors.base[1]]} with a light ${COLOR_NAMES[deck.colors.splash]} splash`
+  const hasSplash = deck.colors.splash && deck.basicLands[deck.colors.splash] > 0
+  const colorLabel = hasSplash
+    ? `${COLOR_NAMES[deck.colors.base[0]]}-${COLOR_NAMES[deck.colors.base[1]]} with a light ${COLOR_NAMES[deck.colors.splash!]} splash`
     : deck.colors.base.map((color) => COLOR_NAMES[color]).join("-")
 
   const topCards = deck.mainDeck.slice(0, 3).map((entry) => entry.card.displayName)
