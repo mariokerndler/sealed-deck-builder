@@ -11,7 +11,7 @@ describe("App", () => {
       screen.getByText(/Build the best Sealed deck from your pool/i),
     ).toBeInTheDocument()
     expect(screen.getByLabelText(/Sealed card pool/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Rating files/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Upload your own/i)).toBeInTheDocument()
   })
 
   it("shows a validation message when evaluating without ratings", () => {

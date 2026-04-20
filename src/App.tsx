@@ -5,6 +5,7 @@ import {
   DatabaseIcon,
   FileCode2Icon,
   InfoIcon,
+  LayersIcon,
   Layers3Icon,
   LoaderCircleIcon,
   SparklesIcon,
@@ -59,6 +60,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { COLOR_NAMES, batchFetchCards, describeManaBase, evaluateSealedPool, mergeRatingFiles, parsePoolText, parseRatingFileContent, type RankedDeckResult, type RatingFileParseResult, type ScryfallDataMap, type SynergyTag } from "@/lib/mtg"
+import { RATING_PRESETS, type RatingPreset } from "@/lib/ratings/presets"
 
 const SAMPLE_POOL = `1 Harsh Annotation
 1 Shattered Acolyte
@@ -197,6 +199,16 @@ function App() {
     setFileErrors(errors)
     setRatingFiles((current) => [...current, ...parsedFiles])
     event.target.value = ""
+  }
+
+  function handleLoadPreset(preset: RatingPreset) {
+    try {
+      const parsed = parseRatingFileContent(preset.content, preset.name)
+      setRatingFiles((current) => [...current, parsed])
+      setFileErrors([])
+    } catch (error) {
+      setFileErrors([`${preset.name}: ${error instanceof Error ? error.message : "Could not parse preset."}`])
+    }
   }
 
   function handleEvaluate() {
@@ -371,9 +383,36 @@ function App() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
+                <div className="flex flex-col gap-2">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-stone-700">
+                    <LayersIcon className="h-4 w-4" />
+                    Prebuilt rating sets
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {RATING_PRESETS.map((preset) => {
+                      const alreadyLoaded = ratingFiles.some((f) => f.fileName === preset.name)
+                      return (
+                        <Button
+                          key={preset.id}
+                          variant="outline"
+                          size="sm"
+                          disabled={alreadyLoaded}
+                          onClick={() => handleLoadPreset(preset)}
+                          title={preset.description}
+                        >
+                          {alreadyLoaded && <CheckCircle2Icon className="h-3.5 w-3.5 text-emerald-600" data-icon="inline-start" />}
+                          {preset.name}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <Separator />
+
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="rating-files">Rating files</FieldLabel>
+                    <FieldLabel htmlFor="rating-files">Upload your own</FieldLabel>
                     <FieldContent>
                       <Input
                         id="rating-files"
