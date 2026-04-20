@@ -1,4 +1,4 @@
-import SOS_CONTENT from "../../../SOS.js?raw"
+import SOS_CONTENT from "@/data/ratings/sos.json?raw"
 
 export type RatingPreset = {
   id: string
