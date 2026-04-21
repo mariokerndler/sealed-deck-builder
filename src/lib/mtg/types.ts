@@ -176,3 +176,36 @@ export type SearchConfig = {
   candidateLimit: number
   variantsPerCandidate: number
 }
+
+export type RoleFlag = {
+  label: string
+  active: boolean
+  explanation: string
+}
+
+export type SynergyTagAnalysis = {
+  tag: SynergyTag
+  role: SynergyRole
+  /** The specific keyword name or oracle text fragment that triggered this tag */
+  reason: string
+}
+
+export type ScoreAdjustment = {
+  label: string
+  delta: number
+}
+
+export type CardAnalysis = {
+  card: RatingCard
+  /** null when Scryfall data is not loaded */
+  scryfallCard: import("@/lib/mtg/scryfall").ScryfallCard | null
+  roleFlags: RoleFlag[]
+  /** Empty array when scryfallCard is null */
+  synergyTags: SynergyTagAnalysis[]
+  scoreBreakdown: {
+    baseRating: number
+    /** Only non-zero adjustments are included */
+    adjustments: ScoreAdjustment[]
+    total: number
+  }
+}
