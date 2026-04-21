@@ -193,12 +193,28 @@ function App() {
     () => searchQuickAddCandidates(quickAddInput, quickAddCandidates),
     [quickAddInput, quickAddCandidates],
   )
+  const resolvedPoolCards = useMemo(
+    () =>
+      parsedPool.flatMap((entry) => {
+        const match = entry.normalizedAliases
+          .map((alias) => mergedRatings.index.get(alias))
+          .find(Boolean)
+
+        return match
+          ? [{ quantity: entry.quantity, ratingCard: match.card }]
+          : []
+      }),
+    [parsedPool, mergedRatings],
+  )
 
   useEffect(() => {
     setHighlightedSuggestionIndex(0)
   }, [quickAddInput, quickAddSuggestions.length])
 
-  const poolSubtypes = useMemo(() => extractPoolSubtypes(scryfallData), [scryfallData])
+  const poolSubtypes = useMemo(
+    () => extractPoolSubtypes(resolvedPoolCards, scryfallData),
+    [resolvedPoolCards, scryfallData],
+  )
 
   const analyzerChips = useMemo(() => {
     const chips: string[] = []

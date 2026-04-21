@@ -150,6 +150,13 @@ export type SynergyRole = "provider" | "payoff" | "both"
 
 export type CardSynergyTags = Partial<Record<SynergyTag, SynergyRole>>
 
+export type SynergyEvidence = {
+  role: SynergyRole
+  reasons: string[]
+}
+
+export type CardSynergyEvidenceMap = Partial<Record<SynergyTag, SynergyEvidence>>
+
 export type SynergyBreakdown = Partial<Record<SynergyTag, number>>
 
 export type SynergyCardContributor = {

@@ -186,6 +186,15 @@ describe("analyzeCard", () => {
       expect(tag!.reason).toContain("flashback keyword")
     })
 
+    it("tags keyword-only surveil as graveyard provider with reason", () => {
+      const entry = makeEntry({ normalizedName: "watchful note", isInstantLike: true })
+      const scry = makeScryfall({ name: "watchful note", type_line: "Instant", keywords: ["Surveil"], oracle_text: "Surveil 2." })
+      const result = analyzeCard("watchful note", makeIndex([entry]), makeScryData([scry]))!
+      const tag = result.synergyTags.find((t) => t.tag === "graveyard")
+      expect(tag!.role).toBe("provider")
+      expect(tag!.reason).toContain("surveil keyword")
+    })
+
     it("tags lifelink keyword as lifegain provider", () => {
       const entry = makeEntry({ normalizedName: "lifelinker", isCreature: true })
       const scry = makeScryfall({ name: "lifelinker", type_line: "Creature", keywords: ["Lifelink"] })
@@ -203,6 +212,15 @@ describe("analyzeCard", () => {
       expect(tag).toBeDefined()
       expect(tag!.role).toBe("provider")
       expect(tag!.reason).toContain("CMC 6")
+    })
+
+    it("tags 'if you gained life this turn' as lifegain payoff with reason", () => {
+      const entry = makeEntry({ normalizedName: "bloom check", isInstantLike: true })
+      const scry = makeScryfall({ name: "bloom check", type_line: "Instant", oracle_text: "If you gained life this turn, draw two cards." })
+      const result = analyzeCard("bloom check", makeIndex([entry]), makeScryData([scry]))!
+      const tag = result.synergyTags.find((t) => t.tag === "lifegain")
+      expect(tag!.role).toBe("payoff")
+      expect(tag!.reason).toContain("gained life this turn")
     })
 
     it("returns empty synergyTags when no scryfall data", () => {

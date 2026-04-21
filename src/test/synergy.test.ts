@@ -7,7 +7,7 @@ import {
   extractPoolSubtypes,
 } from "@/lib/mtg/synergy"
 import type { ScryfallCard, ScryfallDataMap } from "@/lib/mtg/scryfall"
-import type { DeckCard } from "@/lib/mtg/types"
+import type { DeckCard, PoolCard } from "@/lib/mtg/types"
 import { EMPTY_COLOR_COUNTS } from "@/lib/mtg/constants"
 
 // Helper to build a minimal DeckCard for testing
@@ -52,6 +52,13 @@ function makeScryfallCard(overrides: Partial<ScryfallCard> & Pick<ScryfallCard, 
     type_line: "Creature",
     oracle_text: "",
     ...overrides,
+  }
+}
+
+function makePoolCard(normalizedName: string, quantity = 1): PoolCard {
+  return {
+    quantity,
+    ratingCard: makeDeckCard(normalizedName).card,
   }
 }
 
@@ -127,8 +134,32 @@ describe("deriveCardSynergyTags", () => {
     expect(tags.lifegain).toBe("payoff")
   })
 
+  it("tags 'if you gained life this turn' as lifegain payoff", () => {
+    const card = makeScryfallCard({ name: "Bloom Check", type_line: "Instant", oracle_text: "If you gained life this turn, draw two cards." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.lifegain).toBe("payoff")
+  })
+
+  it("tags infusion-style gained-life gates as lifegain payoff", () => {
+    const card = makeScryfallCard({ name: "Infused Growth", type_line: "Creature", oracle_text: "Infusion — If you gained life this turn, put two +1/+1 counters on this creature.", keywords: ["Infusion"] })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.lifegain).toBe("payoff")
+  })
+
   it("tags a graveyard mill card as graveyard provider", () => {
     const card = makeScryfallCard({ name: "Miller", type_line: "Sorcery", oracle_text: "Target player mills four cards." })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.graveyard).toBe("provider")
+  })
+
+  it("tags keyword-only surveil as graveyard provider even without reminder text", () => {
+    const card = makeScryfallCard({ name: "Watchful Note", type_line: "Instant", oracle_text: "Surveil 2.", keywords: ["Surveil"] })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.graveyard).toBe("provider")
+  })
+
+  it("tags reminder-less surveil text as graveyard provider", () => {
+    const card = makeScryfallCard({ name: "Prismari Charm", type_line: "Instant", oracle_text: "Choose one —\n• Surveil 2, then draw a card.\n• Deal 2 damage to any target." })
     const tags = deriveCardSynergyTags(card, new Set())
     expect(tags.graveyard).toBe("provider")
   })
@@ -311,7 +342,7 @@ describe("extractPoolSubtypes", () => {
       ["zombie b", makeScryfallCard({ name: "Zombie B", type_line: "Creature — Zombie" })],
       ["goblin a", makeScryfallCard({ name: "Goblin A", type_line: "Creature — Goblin" })],
     ])
-    const subtypes = extractPoolSubtypes(data, 2)
+    const subtypes = extractPoolSubtypes([makePoolCard("zombie a"), makePoolCard("zombie b"), makePoolCard("goblin a")], data, 2)
     expect(subtypes.has("Zombie")).toBe(true)
     expect(subtypes.has("Goblin")).toBe(false)
   })
@@ -321,7 +352,7 @@ describe("extractPoolSubtypes", () => {
       ["sorcery a", makeScryfallCard({ name: "Sorcery A", type_line: "Sorcery" })],
       ["sorcery b", makeScryfallCard({ name: "Sorcery B", type_line: "Sorcery" })],
     ])
-    const subtypes = extractPoolSubtypes(data, 2)
+    const subtypes = extractPoolSubtypes([makePoolCard("sorcery a"), makePoolCard("sorcery b")], data, 2)
     expect(subtypes.size).toBe(0)
   })
 
@@ -339,7 +370,7 @@ describe("extractPoolSubtypes", () => {
       ["saga a", makeDfc("Saga A", "Zombie")],
       ["saga b", makeDfc("Saga B", "Zombie")],
     ])
-    const subtypes = extractPoolSubtypes(data, 2)
+    const subtypes = extractPoolSubtypes([makePoolCard("saga a"), makePoolCard("saga b")], data, 2)
     expect(subtypes.has("Zombie")).toBe(true)
   })
 
@@ -350,8 +381,19 @@ describe("extractPoolSubtypes", () => {
       ["human c", makeScryfallCard({ name: "Human C", type_line: "Creature — Human" })],
     ])
     // 3 Humans: below the generic threshold of 4
-    const subtypes = extractPoolSubtypes(data, 2)
+    const subtypes = extractPoolSubtypes([makePoolCard("human a"), makePoolCard("human b"), makePoolCard("human c")], data, 2)
     expect(subtypes.has("Human")).toBe(false)
+  })
+
+  it("only counts cards that are actually in the current pool", () => {
+    const data: ScryfallDataMap = new Map([
+      ["zombie a", makeScryfallCard({ name: "Zombie A", type_line: "Creature — Zombie" })],
+      ["zombie b", makeScryfallCard({ name: "Zombie B", type_line: "Creature — Zombie" })],
+      ["elf scout", makeScryfallCard({ name: "Elf Scout", type_line: "Creature — Elf" })],
+    ])
+    const subtypes = extractPoolSubtypes([makePoolCard("elf scout")], data, 2)
+    expect(subtypes.has("Zombie")).toBe(false)
+    expect(subtypes.has("Elf")).toBe(false)
   })
 })
 
@@ -389,6 +431,16 @@ describe("computeSynergyBonus", () => {
     const deck = [makeDeckCard("synergy card", 3)]
     const { bonus } = computeSynergyBonus(deck, allTags)
     expect(bonus).toBeGreaterThan(0)
+  })
+
+  it("does not fire synergy for three payoffs with no providers", () => {
+    const allTags = new Map([
+      ["token payoff", { tokens: "payoff" as const }],
+    ])
+    const deck = [makeDeckCard("token payoff", 3)]
+    const { bonus, breakdown } = computeSynergyBonus(deck, allTags)
+    expect(bonus).toBe(0)
+    expect(breakdown.tokens).toBeUndefined()
   })
 
   it("caps total bonus at 8.0", () => {
@@ -442,5 +494,15 @@ describe("buildAllTags", () => {
     const poolCards = [{ quantity: 1, ratingCard: makeDeckCard("unknown card").card }]
     const allTags = buildAllTags(poolCards, scryfallData)
     expect(allTags.size).toBe(0)
+  })
+
+  it("derives tribal tags from the actual pool instead of all loaded cards", () => {
+    const scryfallData: ScryfallDataMap = new Map([
+      ["zombie lord", makeScryfallCard({ name: "Zombie Lord", type_line: "Creature — Zombie", oracle_text: "Other Zombies you control get +1/+1." })],
+      ["off-pool zombie a", makeScryfallCard({ name: "Off-Pool Zombie A", type_line: "Creature — Zombie" })],
+      ["off-pool zombie b", makeScryfallCard({ name: "Off-Pool Zombie B", type_line: "Creature — Zombie" })],
+    ])
+    const allTags = buildAllTags([makePoolCard("zombie lord")], scryfallData)
+    expect(allTags.get("zombie lord")?.tribal).toBeUndefined()
   })
 })
