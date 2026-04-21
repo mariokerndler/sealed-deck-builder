@@ -8,6 +8,7 @@ import {
   LayersIcon,
   Layers3Icon,
   LoaderCircleIcon,
+  SearchIcon,
   SparklesIcon,
   TriangleAlertIcon,
   WandSparklesIcon,
@@ -59,7 +60,8 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { COLOR_NAMES, batchFetchCards, describeManaBase, evaluateSealedPool, mergeRatingFiles, parsePoolText, parseRatingFileContent, type RankedDeckResult, type RatingFileParseResult, type ScryfallDataMap, type SynergyTag } from "@/lib/mtg"
+import { COLOR_NAMES, batchFetchCards, describeManaBase, evaluateSealedPool, extractPoolSubtypes, mergeRatingFiles, parsePoolText, parseRatingFileContent, type RankedDeckResult, type RatingFileParseResult, type ScryfallDataMap, type SynergyTag } from "@/lib/mtg"
+import { CardAnalyzerModal } from "@/components/CardAnalyzerModal"
 import { RATING_PRESETS, type RatingPreset } from "@/lib/ratings/presets"
 
 const SAMPLE_POOL = `1 Harsh Annotation
@@ -149,12 +151,27 @@ function App() {
   const [scryfallErrors, setScryfallErrors] = useState<string[]>([])
   const [scryfallProgress, setScryfallProgress] = useState<{ fetched: number; total: number } | null>(null)
 
+  const [analyzedCard, setAnalyzedCard] = useState<string | null>(null)
+  const [analyzerSearch, setAnalyzerSearch] = useState("")
+
   const mergedRatings = useMemo(() => mergeRatingFiles(ratingFiles), [ratingFiles])
   const parsedPool = useMemo(() => parsePoolText(poolText), [poolText])
   const totalRatedCards = useMemo(
     () => ratingFiles.reduce((sum, file) => sum + file.cards.length, 0),
     [ratingFiles],
   )
+
+  const poolSubtypes = useMemo(() => extractPoolSubtypes(scryfallData), [scryfallData])
+
+  const analyzerChips = useMemo(() => {
+    const chips: string[] = []
+    for (const entry of parsedPool) {
+      const found = entry.normalizedAliases.some((a) => mergedRatings.index.has(a))
+      if (found) chips.push(entry.inputName)
+      if (chips.length >= 8) break
+    }
+    return chips
+  }, [parsedPool, mergedRatings.index])
 
 
   async function handleFetchCardData() {
@@ -491,6 +508,64 @@ function App() {
                 </Button>
               </CardFooter>
             </Card>
+
+            {totalRatedCards > 0 && (
+              <Card className="border-stone-200/80 bg-white/90 shadow-lg shadow-stone-400/10 backdrop-blur">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <SearchIcon />
+                    Card Analyzer
+                  </CardTitle>
+                  <CardDescription>
+                    Look up any card from the loaded rating set to see its score breakdown and synergy tags.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search card name…"
+                      value={analyzerSearch}
+                      onChange={(e) => setAnalyzerSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && analyzerSearch.trim()) {
+                          setAnalyzedCard(analyzerSearch.trim())
+                          setAnalyzerSearch("")
+                        }
+                      }}
+                      className="flex-1 bg-stone-50"
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={!analyzerSearch.trim()}
+                      onClick={() => {
+                        setAnalyzedCard(analyzerSearch.trim())
+                        setAnalyzerSearch("")
+                      }}
+                    >
+                      Analyze
+                    </Button>
+                  </div>
+                  {analyzerChips.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {analyzerChips.map((name) => (
+                        <button
+                          key={name}
+                          className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs text-stone-600 hover:bg-stone-200 transition-colors"
+                          onClick={() => setAnalyzedCard(name)}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                      {parsedPool.filter((e) => e.normalizedAliases.some((a) => mergedRatings.index.has(a))).length > 8 && (
+                        <span className="rounded-full bg-stone-50 px-2.5 py-0.5 text-xs text-stone-400">
+                          +{parsedPool.filter((e) => e.normalizedAliases.some((a) => mergedRatings.index.has(a))).length - 8} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           <Card className="border-stone-200/80 bg-white/90 shadow-lg shadow-stone-400/10 backdrop-blur">
@@ -645,7 +720,12 @@ function App() {
                                     <TableRow key={`${deck.id}-${entry.card.normalizedName}`}>
                                       <TableCell>{entry.quantity}</TableCell>
                                       <TableCell className="font-medium">
-                                        {entry.card.displayName}
+                                        <button
+                                          className="text-left underline decoration-dotted underline-offset-2 hover:text-stone-600 transition-colors"
+                                          onClick={() => setAnalyzedCard(entry.card.displayName)}
+                                        >
+                                          {entry.card.displayName}
+                                        </button>
                                       </TableCell>
                                       <TableCell>{entry.card.type}</TableCell>
                                       <TableCell className="text-right">
@@ -754,6 +834,16 @@ function App() {
           </Card>
         </section>
       </div>
+
+      {analyzedCard && (
+        <CardAnalyzerModal
+          cardName={analyzedCard}
+          ratingIndex={mergedRatings.index}
+          scryfallData={scryfallData}
+          poolSubtypes={poolSubtypes}
+          onClose={() => setAnalyzedCard(null)}
+        />
+      )}
     </main>
   )
 }
