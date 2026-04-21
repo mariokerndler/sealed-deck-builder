@@ -70,4 +70,9 @@ describe("AppTopbar", () => {
     )
     expect(screen.getByText("FDN preset loaded.")).toBeInTheDocument()
   })
+
+  it("disables Evaluate button while evaluating", () => {
+    render(<AppTopbar {...baseProps} hasRatings hasPool isEvaluating />)
+    expect(screen.getByRole("button", { name: /evaluate/i })).toBeDisabled()
+  })
 })
