@@ -20,11 +20,8 @@ export function useResizablePanel(
 ): { width: number; handleMouseDown: React.MouseEventHandler } {
   const [width, setWidth] = useState(() => readFromStorage(key, defaultWidth, min, max))
   const widthRef = useRef(width)
+  widthRef.current = width
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null)
-
-  useEffect(() => {
-    widthRef.current = width
-  }, [width])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

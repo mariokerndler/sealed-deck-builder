@@ -9,22 +9,41 @@ Object.assign(navigator, {
 })
 
 // Mock localStorage for tests
-const localStorageMock = (() => {
-  let store: Record<string, string> = {}
+let store: Record<string, string> = {}
 
-  return {
-    getItem: (key: string) => Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null,
-    setItem: (key: string, value: string) => {
-      store[key] = String(value)
-    },
-    removeItem: (key: string) => {
-      delete store[key]
-    },
-    clear: () => {
-      store = {}
-    },
+const localStorageMock = Object.create(Storage.prototype)
+Object.defineProperty(localStorageMock, "__store__", {
+  value: store,
+  writable: true,
+})
+
+// Override Storage.prototype methods with implementations that use our store
+const originalGetItem = Storage.prototype.getItem
+const originalSetItem = Storage.prototype.setItem
+const originalRemoveItem = Storage.prototype.removeItem
+const originalClear = Storage.prototype.clear
+
+Storage.prototype.getItem = function(key: string) {
+  const s = (this as any).__store__ || store
+  return Object.prototype.hasOwnProperty.call(s, key) ? s[key] : null
+}
+
+Storage.prototype.setItem = function(key: string, value: string) {
+  const s = (this as any).__store__ || store
+  s[key] = String(value)
+}
+
+Storage.prototype.removeItem = function(key: string) {
+  const s = (this as any).__store__ || store
+  delete s[key]
+}
+
+Storage.prototype.clear = function() {
+  const s = (this as any).__store__ || store
+  for (const key in s) {
+    delete s[key]
   }
-})()
+}
 
 Object.defineProperty(window, "localStorage", {
   value: localStorageMock,
@@ -32,4 +51,5 @@ Object.defineProperty(window, "localStorage", {
 
 afterEach(() => {
   cleanup()
+  window.localStorage.clear()
 })

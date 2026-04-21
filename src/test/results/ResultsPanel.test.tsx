@@ -77,7 +77,7 @@ describe("ResultsPanel", () => {
   })
 
   it("persists width to localStorage when drag handle is used", () => {
-    const setItemSpy = vi.spyOn(window.localStorage, "setItem")
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     render(<ResultsPanel {...baseProps} results={[mockDeck as any]} />)
 
