@@ -13,7 +13,7 @@ const localStorageMock = (() => {
   let store: Record<string, string> = {}
 
   return {
-    getItem: (key: string) => store[key] || null,
+    getItem: (key: string) => Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null,
     setItem: (key: string, value: string) => {
       store[key] = String(value)
     },
