@@ -38,7 +38,7 @@ type AppSidebarProps = {
 
 export function AppSidebar({
   ratingFiles,
-  mergedRatingsSize,
+  mergedRatingsSize: _mergedRatingsSize,
   fileErrors,
   conflicts,
   onLoadPreset,
