@@ -63,7 +63,6 @@ export function ResultsDetail({
 
   return (
     <div
-      key={deck.id}
       className="flex min-w-0 flex-1 flex-col overflow-hidden motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150"
     >
       {/* Header */}
@@ -75,6 +74,9 @@ export function ResultsDetail({
               {c}
             </Badge>
           ))}
+          <Badge variant="outline" className="border-[var(--color-paper-line-strong)] bg-white/70 text-[10px]">
+            {deck.totalCardCount} cards
+          </Badge>
           {deck.scoreBreakdown.fixingBonus > 0 ? (
             <Badge className="bg-stone-200 text-stone-800 text-[9px]">
               +{deck.scoreBreakdown.fixingBonus.toFixed(1)} fixing
@@ -282,8 +284,8 @@ export function ResultsDetail({
               <AccordionItem value="diagnostics">
                 <AccordionTrigger className="text-[11px]">Detailed notes</AccordionTrigger>
                 <AccordionContent className="flex flex-col gap-1.5">
-                  {deck.diagnostics.map((line) => (
-                    <p key={`${deck.id}-${line}`} className="text-[11px] text-[var(--color-ink-soft)]">
+                  {deck.diagnostics.map((line, i) => (
+                    <p key={`${deck.id}-diag-${i}`} className="text-[11px] text-[var(--color-ink-soft)]">
                       {line}
                     </p>
                   ))}

@@ -131,4 +131,9 @@ describe("ResultsDetail", () => {
     render(<ResultsDetail {...baseProps} copiedDeckId="deck-1-deck" />)
     expect(screen.getByRole("button", { name: /copied deck/i })).toBeInTheDocument()
   })
+
+  it("shows 'Copied mana' label when copiedDeckId matches mana", () => {
+    render(<ResultsDetail {...baseProps} copiedDeckId="deck-1-mana" />)
+    expect(screen.getByRole("button", { name: /copied mana/i })).toBeInTheDocument()
+  })
 })
