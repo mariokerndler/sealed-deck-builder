@@ -53,8 +53,7 @@ describe("ResultsPanel", () => {
   it("shows skeleton cards when isEvaluating is true", () => {
     render(<ResultsPanel {...baseProps} isEvaluating />)
     expect(screen.queryByText(/no ranked decks yet/i)).not.toBeInTheDocument()
-    // Skeletons are rendered — check for their container
-    expect(document.querySelector(".animate-pulse")).toBeInTheDocument()
+    expect(screen.getByTestId("evaluating-skeletons")).toBeInTheDocument()
   })
 
   it("renders ResultsList when results are present", () => {

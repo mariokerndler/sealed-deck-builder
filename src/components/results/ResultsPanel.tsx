@@ -46,7 +46,7 @@ export function ResultsPanel({
       ) : null}
 
       {isEvaluating ? (
-        <div className="flex flex-col gap-3 p-4" aria-live="polite">
+        <div className="flex flex-col gap-3 p-4" aria-live="polite" data-testid="evaluating-skeletons">
           <ResultSkeleton />
           <ResultSkeleton />
           <ResultSkeleton />
