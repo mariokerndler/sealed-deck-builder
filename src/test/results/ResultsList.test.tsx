@@ -36,4 +36,14 @@ describe("ResultsList", () => {
     fireEvent.click(screen.getAllByRole("button")[2]!)
     expect(onSelect).toHaveBeenCalledWith(2)
   })
+
+  it("shows the color pair label for each deck", () => {
+    render(<ResultsList results={makeDecks(1)} selectedIndex={0} onSelect={vi.fn()} />)
+    expect(screen.getByText(/white.*blue|blue.*white/i)).toBeInTheDocument()
+  })
+
+  it("renders the header with the correct build count", () => {
+    render(<ResultsList results={makeDecks(3)} selectedIndex={0} onSelect={vi.fn()} />)
+    expect(screen.getByText(/3 builds/i)).toBeInTheDocument()
+  })
 })
