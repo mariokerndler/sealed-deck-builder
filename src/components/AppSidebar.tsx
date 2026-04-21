@@ -16,7 +16,6 @@ import { type RatingFileParseResult } from "@/lib/mtg"
 
 type AppSidebarProps = {
   ratingFiles: RatingFileParseResult[]
-  mergedRatingsSize: number
   fileErrors: string[]
   conflicts: string[]
   onLoadPreset: (preset: RatingPreset) => void
@@ -38,7 +37,6 @@ type AppSidebarProps = {
 
 export function AppSidebar({
   ratingFiles,
-  mergedRatingsSize: _mergedRatingsSize,
   fileErrors,
   conflicts,
   onLoadPreset,

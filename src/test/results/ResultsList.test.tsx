@@ -2,13 +2,14 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { ResultsList } from "@/components/results/ResultsList"
 
-const makeDecks = (n: number) =>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const makeDecks = (n: number): any[] =>
   Array.from({ length: n }, (_, i) => ({
     id: `deck-${i}`,
     totalScore: 90 - i * 5,
     colors: { base: ["W", "U"] as const, splash: null },
     basicLands: { W: 9, U: 8, B: 0, R: 0, G: 0 },
-  })) as any[]
+  }))
 
 describe("ResultsList", () => {
   it("renders a row for each deck", () => {

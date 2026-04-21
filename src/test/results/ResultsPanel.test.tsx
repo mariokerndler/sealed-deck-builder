@@ -57,6 +57,7 @@ describe("ResultsPanel", () => {
   })
 
   it("renders ResultsList when results are present", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     render(<ResultsPanel {...baseProps} results={[mockDeck as any]} />)
     // Score visible in the list (may appear in both list and detail panels)
     expect(screen.getAllByText("87.4").length).toBeGreaterThan(0)
@@ -66,6 +67,7 @@ describe("ResultsPanel", () => {
     render(
       <ResultsPanel
         {...baseProps}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         results={[mockDeck as any]}
         missingCards={["2 Some Card"]}
       />,

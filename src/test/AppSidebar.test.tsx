@@ -42,6 +42,7 @@ describe("AppSidebar", () => {
 
   it("disables a preset button when that file is already loaded", () => {
     const loaded = { fileName: RATING_PRESETS[0]!.name, cards: [], conflicts: [] }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     render(<AppSidebar {...baseProps} ratingFiles={[loaded] as any} />)
     expect(
       screen.getByRole("button", { name: new RegExp(RATING_PRESETS[0]!.name, "i") }),
@@ -50,7 +51,8 @@ describe("AppSidebar", () => {
 
   it("renders a loaded file row with card count", () => {
     const loaded = { fileName: "MySet.js", cards: new Array(120), conflicts: [] }
-    render(<AppSidebar {...baseProps} ratingFiles={[loaded] as any} mergedRatingsSize={120} />)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    render(<AppSidebar {...baseProps} ratingFiles={[loaded] as any} />)
     expect(screen.getByText("MySet.js")).toBeInTheDocument()
     expect(screen.getByText(/120 cards/i)).toBeInTheDocument()
   })

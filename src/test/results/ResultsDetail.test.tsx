@@ -83,6 +83,7 @@ const mockDeck = {
 } as const
 
 const baseProps = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   deck: mockDeck as any,
   index: 0,
   copiedDeckId: null,

@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useMemo, useState, type ChangeEvent, type KeyboardEvent } from "react"
-import { AppTopbar, type Notice } from "@/components/AppTopbar"
+import { AppTopbar, type Notice, type NoticeTone } from "@/components/AppTopbar"
 import { AppSidebar } from "@/components/AppSidebar"
 import { PoolWorkspace } from "@/components/PoolWorkspace"
 import { ResultsPanel } from "@/components/results/ResultsPanel"
@@ -75,8 +75,6 @@ function formatDeckListForCopy(deck: RankedDeckResult) {
 function formatManaBaseForCopy(deck: RankedDeckResult) {
   return [`${formatColors(deck).join(", ")} mana base`, ...describeManaBase(deck.basicLands)].join("\n")
 }
-
-type NoticeTone = "success" | "info" | "error"
 
 function App() {
   const [poolText, setPoolText] = useState("")
@@ -346,7 +344,6 @@ function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <AppSidebar
           ratingFiles={ratingFiles}
-          mergedRatingsSize={mergedRatings.index.size}
           fileErrors={fileErrors}
           conflicts={mergedRatings.conflicts}
           onLoadPreset={handleLoadPreset}
