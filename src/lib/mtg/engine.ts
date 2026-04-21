@@ -4,6 +4,7 @@ import {
   DEFAULT_SEARCH_CONFIG,
   EMPTY_COLOR_COUNTS,
 } from "@/lib/mtg/constants"
+import { analyzeManaCost, canCastCardWithAvailableColors, getColorIdentityFromCard } from "@/lib/mtg/mana"
 import type {
   CardSynergyTags,
   ColorCountMap,
@@ -35,6 +36,7 @@ type CandidateEvaluation = {
   poolStrength: number
   playableCards: PoolCard[]
   fixingCount: number
+  scryfallData?: ScryfallDataMap
   allTags: Map<string, CardSynergyTags>
   activeSynergyTags: SynergyTag[]
 }
@@ -96,7 +98,82 @@ const VARIANT_PROFILES: VariantProfile[] = [
 ]
 
 function getCardColors(card: RatingCard): ColorSymbol[] {
-  return COLOR_SYMBOLS.filter((symbol) => card.rawColors[symbol] > 0)
+  return getColorIdentityFromCard(card)
+}
+
+function getScryfallCardForRatingCard(
+  card: RatingCard,
+  scryfallData?: ScryfallDataMap,
+) {
+  if (!scryfallData) {
+    return null
+  }
+
+  return (
+    scryfallData.get(card.normalizedName) ??
+    card.normalizedAliases
+      .map((alias) => scryfallData.get(alias))
+      .find(Boolean) ??
+    null
+  )
+}
+
+function getOracleText(card: RatingCard, scryfallData?: ScryfallDataMap): string {
+  const scryfallCard = getScryfallCardForRatingCard(card, scryfallData)
+  if (!scryfallCard) {
+    return ""
+  }
+
+  if (scryfallCard.card_faces?.length) {
+    return scryfallCard.card_faces
+      .map((face) => face.oracle_text ?? "")
+      .filter(Boolean)
+      .join("\n")
+  }
+
+  return scryfallCard.oracle_text ?? ""
+}
+
+function getCardDrawScore(card: RatingCard, scryfallData?: ScryfallDataMap): number {
+  if (!scryfallData || card.isLand) {
+    return 0
+  }
+
+  const text = getOracleText(card, scryfallData).toLowerCase()
+  if (!text) {
+    return 0
+  }
+
+  let score = 0
+
+  if (/\bdraw (?:a|one) card\b/.test(text)) score = Math.max(score, 0.75)
+  if (/\bdraw two cards\b/.test(text)) score = Math.max(score, 1.35)
+  if (/\bdraw three cards\b/.test(text)) score = Math.max(score, 1.85)
+  if (/\bdraw (?:four|five|six|seven|x|\d+|that many) cards\b/.test(text)) {
+    score = Math.max(score, 2.1)
+  }
+
+  if (/\blook at the top [^.]* put [^.]* into your hand\b/.test(text)) {
+    score = Math.max(score, 0.65)
+  }
+
+  if (score === 0) {
+    return 0
+  }
+
+  if (/\bdraw.{0,40}discard\b|\bdiscard.{0,40}draw\b/.test(text)) {
+    score = Math.max(0.45, score - 0.35)
+  }
+
+  if (
+    /\beach player draws\b|\byou and target opponent each draw\b|\btarget opponent draws\b|\ban opponent draws\b/.test(
+      text,
+    )
+  ) {
+    score *= 0.65
+  }
+
+  return Number(score.toFixed(2))
 }
 
 function flattenDeck(mainDeck: DeckCard[]): RatingCard[] {
@@ -233,16 +310,18 @@ function isCandidatePlayable(
   const baseColors = new Set(candidate.base)
   const splash = candidate.splash
 
-  if (!colors.every((color) => baseColors.has(color) || color === splash)) {
+  const availableColors = new Set<ColorSymbol>(candidate.splash ? [...candidate.base, candidate.splash] : [...candidate.base])
+
+  if (!canCastCardWithAvailableColors(card, availableColors)) {
     return false
   }
 
-  if (!splash || !colors.includes(splash)) {
+  if (!splash || canCastCardWithAvailableColors(card, baseColors)) {
     return true
   }
 
-  const splashPips = card.rawColors[splash]
-  if (splashPips > 1) {
+  const splashPips = analyzeManaCost(card.primaryCost).effectivePips[splash]
+  if (splashPips > 1.25) {
     return false
   }
 
@@ -257,9 +336,18 @@ function isCandidatePlayable(
   return card.rating >= 2.9 || (card.rating >= 2.7 && fixingCount > 0)
 }
 
-function scorePoolCardForCandidate(card: RatingCard, candidate: CandidateConfig): number {
+function scorePoolCardForCandidate(
+  card: RatingCard,
+  candidate: CandidateConfig,
+): number {
   const colors = getCardColors(card)
-  const isSplashCard = Boolean(candidate.splash && colors.includes(candidate.splash))
+  const baseColors = new Set(candidate.base)
+  const availableColors = new Set<ColorSymbol>(candidate.splash ? [...candidate.base, candidate.splash] : [...candidate.base])
+  const isSplashCard = Boolean(
+    candidate.splash &&
+    canCastCardWithAvailableColors(card, availableColors) &&
+    !canCastCardWithAvailableColors(card, baseColors),
+  )
 
   let score = card.rating
   score += card.role.isCheapCreature ? 0.15 : 0
@@ -272,7 +360,7 @@ function scorePoolCardForCandidate(card: RatingCard, candidate: CandidateConfig)
     score -= 0.4
   }
 
-  if (candidate.base.length === 1 && colors.length > 1) {
+  if (candidate.base.length === 1 && colors.length > 1 && !card.role.isHybridOnlyFlexible) {
     score -= 0.5
   }
 
@@ -319,7 +407,7 @@ function rankCandidateConfigs(
     let poolStrength =
       topCardQuality +
       playableDepth * 0.35 +
-      creatureDepth * 0.5 +
+      creatureDepth * 0.62 +
       interactionDepth * 0.45 +
       fixingCount * 0.35 +
       synergySnapshot.potentialBonus
@@ -355,6 +443,7 @@ function rankCandidateConfigs(
       poolStrength,
       playableCards,
       fixingCount,
+      scryfallData,
       allTags: synergySnapshot.allTags,
       activeSynergyTags: synergySnapshot.activeSynergyTags,
     }
@@ -373,9 +462,11 @@ function getBaseCardScore(
   copyIndex: number,
   allTags?: Map<string, CardSynergyTags>,
   activeSynergyTags: SynergyTag[] = [],
+  scryfallData?: ScryfallDataMap,
 ): number {
   const colors = getCardColors(card)
   const isSplashCard = Boolean(candidate.splash && colors.includes(candidate.splash))
+  const cardDrawScore = getCardDrawScore(card, scryfallData)
   let score = scorePoolCardForCandidate(card, candidate)
   let synergyPreselectionBonus = 0
 
@@ -394,11 +485,15 @@ function getBaseCardScore(
   }
 
   if (card.isCreature) {
-    score += 0.2
+    score += 0.28
   }
 
   if (card.role.isCheapCreature) {
     score += profile.key === "aggressive" ? 0.35 : 0.15
+  }
+
+  if (cardDrawScore > 0) {
+    score += cardDrawScore * (card.isCreature ? 0.18 : 0.22)
   }
 
   if (card.role.isInteraction) {
@@ -452,6 +547,7 @@ function buildBaselineDeck(
         copyIndex,
         candidateEvaluation.allTags,
         candidateEvaluation.activeSynergyTags,
+        candidateEvaluation.scryfallData,
       ),
       notes: [`Built from ${profile.label} profile.`],
     })),
@@ -482,13 +578,17 @@ function buildBaselineDeck(
   )
 }
 
-function cardMetricContribution(card: RatingCard): Partial<DeckMetrics> {
+function cardMetricContribution(
+  card: RatingCard,
+  scryfallData?: ScryfallDataMap,
+): Partial<DeckMetrics> {
   return {
     creatureCount: card.isCreature ? 1 : 0,
     nonCreatureCount: card.isCreature ? 0 : 1,
     interactionCount: card.role.isInteraction ? 1 : 0,
     cheapPlays: card.cmc <= 2 ? 1 : 0,
     expensiveSpells: card.cmc >= 5 ? 1 : 0,
+    cardDrawCount: getCardDrawScore(card, scryfallData),
     earlyBoardPresence: card.role.isCheapCreature ? 1 : 0,
   }
 }
@@ -501,8 +601,12 @@ function getManaRequirements(
   const earlyPressure = EMPTY_COLOR_COUNTS()
 
   for (const entry of mainDeck) {
+    const manaProfile = analyzeManaCost(entry.card.primaryCost)
     for (const color of COLOR_SYMBOLS) {
-      const pips = entry.card.rawColors[color]
+      const pips =
+        manaProfile.effectivePips[color] > 0
+          ? manaProfile.effectivePips[color]
+          : entry.card.rawColors[color]
       if (pips === 0) {
         continue
       }
@@ -527,6 +631,7 @@ function getDeckMetrics(
   mainDeck: DeckCard[],
   colors: DeckColorIdentity,
   basicLands: ColorCountMap,
+  scryfallData?: ScryfallDataMap,
 ): DeckMetrics {
   const flattened = flattenDeck(mainDeck)
   const count = flattened.length
@@ -535,12 +640,13 @@ function getDeckMetrics(
 
   const totals = flattened.reduce(
     (acc, card) => {
-      const contribution = cardMetricContribution(card)
+      const contribution = cardMetricContribution(card, scryfallData)
       acc.creatureCount += contribution.creatureCount ?? 0
       acc.nonCreatureCount += contribution.nonCreatureCount ?? 0
       acc.interactionCount += contribution.interactionCount ?? 0
       acc.cheapPlays += contribution.cheapPlays ?? 0
       acc.expensiveSpells += contribution.expensiveSpells ?? 0
+      acc.cardDrawCount += contribution.cardDrawCount ?? 0
       acc.earlyBoardPresence += contribution.earlyBoardPresence ?? 0
       return acc
     },
@@ -550,6 +656,7 @@ function getDeckMetrics(
       interactionCount: 0,
       cheapPlays: 0,
       expensiveSpells: 0,
+      cardDrawCount: 0,
       earlyBoardPresence: 0,
     },
   )
@@ -603,6 +710,7 @@ function getDeckMetrics(
     interactionCount: totals.interactionCount,
     cheapPlays: totals.cheapPlays,
     expensiveSpells: totals.expensiveSpells,
+    cardDrawCount: Number(totals.cardDrawCount.toFixed(2)),
     averageCmc,
     manaStability,
     curveScore,
@@ -699,6 +807,7 @@ function scoreDeckShape(metrics: DeckMetrics, profile: VariantProfile): number {
   shape += 2.8 - Math.abs(metrics.creatureCount - profile.preferredCreatures) * 0.42
   shape += 2.2 - Math.abs(metrics.cheapPlays - profile.preferredCheapPlays) * 0.35
   shape += 1.5 - Math.abs(metrics.interactionCount - profile.preferredInteraction) * 0.28
+  shape += Math.min(metrics.cardDrawCount, 3.2) * 0.35
   shape -= Math.max(0, metrics.expensiveSpells - profile.preferredTopEnd) * 0.55
   shape -= Math.max(0, metrics.nonCreatureSaturation - 0.48) * 4
   return shape
@@ -710,13 +819,18 @@ function evaluateDeckScore(
   profile: VariantProfile,
   basicLands: ColorCountMap,
 ): { total: number; metrics: DeckMetrics; breakdown: ScoreBreakdown; synergyBreakdown: SynergyBreakdown; synergyDetail: SynergyDetail } {
-  const metrics = getDeckMetrics(mainDeck, candidateEvaluation.candidate, basicLands)
+  const metrics = getDeckMetrics(
+    mainDeck,
+    candidateEvaluation.candidate,
+    basicLands,
+    candidateEvaluation.scryfallData,
+  )
   const flattened = flattenDeck(mainDeck)
 
   const cardQuality = mainDeck.reduce((sum, card) => sum + card.adjustedScore, 0)
   const manaConsistency = metrics.manaStability * 2.4 + metrics.manaSourceSufficiency * 3.2
   const earlyGameStability = metrics.curveScore + metrics.earlyBoardPresence * 0.7
-  const creatureStructure = metrics.creatureCount * 0.35 - metrics.nonCreatureSaturation * 2.5
+  const creatureStructure = metrics.creatureCount * 0.42 - metrics.nonCreatureSaturation * 2.8
   const interactionQuality = metrics.interactionCount * 0.9 + metrics.removalDensity * 5
   const colorDepthResilience =
     candidateEvaluation.poolStrength * 0.12 -
@@ -744,7 +858,7 @@ function evaluateDeckScore(
     Math.max(0, metrics.expensiveSpells - (expensiveSpellSynergyActive ? 7 : 4)) * 0.6
 
   let penalties = 0
-  if (metrics.creatureCount < 12) penalties += (12 - metrics.creatureCount) * 1.5
+  if (metrics.creatureCount < 13) penalties += (13 - metrics.creatureCount) * 1.6
   if (metrics.cheapPlays < 5) penalties += (5 - metrics.cheapPlays) * 1.2
   if (metrics.expensiveSpells > (expensiveSpellSynergyActive ? 8 : 5))
     penalties += (metrics.expensiveSpells - (expensiveSpellSynergyActive ? 8 : 5)) * 0.9
@@ -821,6 +935,7 @@ function addDeckCopy(
     copyIndex,
     candidateEvaluation.allTags,
     candidateEvaluation.activeSynergyTags,
+    candidateEvaluation.scryfallData,
   )
 
   if (!existing) {
@@ -900,6 +1015,7 @@ function normalizeDeckSize(
           used,
           candidateEvaluation.allTags,
           candidateEvaluation.activeSynergyTags,
+          candidateEvaluation.scryfallData,
         )
 
         return [
@@ -939,6 +1055,7 @@ function mergeFlatCards(
       copyIndex,
       candidateEvaluation.allTags,
       candidateEvaluation.activeSynergyTags,
+      candidateEvaluation.scryfallData,
     )
 
     const existing = merged.get(card.normalizedName)
@@ -979,17 +1096,27 @@ function refineDeck(
   const scoreFlatDeck = (cards: RatingCard[]) => {
     const merged = mergeFlatCards(cards, candidateEvaluation, profile)
     const landCount = suggestLandCount(
-        getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS()),
-        profile,
-        config,
-      )
+      getDeckMetrics(
+        merged,
+        candidateEvaluation.candidate,
+        EMPTY_COLOR_COUNTS(),
+        candidateEvaluation.scryfallData,
+      ),
+      profile,
+      config,
+    )
     const basics = suggestBasicLands(merged, candidateEvaluation.candidate, landCount)
     return evaluateDeckScore(merged, candidateEvaluation, profile, basics).total
   }
 
   const enforceThresholds = () => {
     let merged = mergeFlatCards(deckCards, candidateEvaluation, profile)
-    let metrics = getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS())
+    let metrics = getDeckMetrics(
+      merged,
+      candidateEvaluation.candidate,
+      EMPTY_COLOR_COUNTS(),
+      candidateEvaluation.scryfallData,
+    )
 
     const byWorstShape = [...deckCards].sort((a, b) => {
       const aPenalty = (a.isCreature ? 0 : 0.4) + (a.cmc >= 5 ? 0.35 : 0) + (a.role.isConditionalCard ? 0.2 : 0)
@@ -1008,7 +1135,12 @@ function refineDeck(
       deckCards.push(add)
       unused.splice(unused.indexOf(add), 1)
       merged = mergeFlatCards(deckCards, candidateEvaluation, profile)
-      metrics = getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS())
+      metrics = getDeckMetrics(
+        merged,
+        candidateEvaluation.candidate,
+        EMPTY_COLOR_COUNTS(),
+        candidateEvaluation.scryfallData,
+      )
     }
 
     while (metrics.cheapPlays < 5) {
@@ -1020,7 +1152,12 @@ function refineDeck(
       deckCards.push(add)
       unused.splice(unused.indexOf(add), 1)
       merged = mergeFlatCards(deckCards, candidateEvaluation, profile)
-      metrics = getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS())
+      metrics = getDeckMetrics(
+        merged,
+        candidateEvaluation.candidate,
+        EMPTY_COLOR_COUNTS(),
+        candidateEvaluation.scryfallData,
+      )
     }
   }
 
@@ -1215,7 +1352,12 @@ export function evaluateSealedPool(
       }
 
       const landCount = suggestLandCount(
-        getDeckMetrics(refined, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS()),
+        getDeckMetrics(
+          refined,
+          candidateEvaluation.candidate,
+          EMPTY_COLOR_COUNTS(),
+          candidateEvaluation.scryfallData,
+        ),
         profile,
         config,
       )
@@ -1246,6 +1388,8 @@ export function evaluateSealedPool(
               colorCount: 0,
               maxSingleColorPip: 0,
               totalColoredPips: 0,
+              hasHybridMana: false,
+              isHybridOnlyFlexible: false,
               isCheapCreature: false,
               isExpensiveFinisher: false,
               isInteraction: false,

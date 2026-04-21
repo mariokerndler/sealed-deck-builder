@@ -1,4 +1,4 @@
-import { type ChangeEvent } from "react"
+import { type ChangeEvent, type KeyboardEvent } from "react"
 import {
   CheckCircle2Icon,
   DatabaseIcon,
@@ -11,8 +11,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 import { RATING_PRESETS, type RatingPreset } from "@/lib/ratings/presets"
 import { type RatingFileParseResult } from "@/lib/mtg"
+
+const suggestionListId = "sidebar-analyzer-suggestions"
 
 type AppSidebarProps = {
   ratingFiles: RatingFileParseResult[]
@@ -30,9 +33,13 @@ type AppSidebarProps = {
   parsedPoolCount: number
   analyzerSearch: string
   setAnalyzerSearch: (value: string) => void
+  analyzerSuggestions: Array<{ name: string; normalizedName: string; type?: string; source: string }>
+  highlightedAnalyzerSuggestionIndex: number
+  setHighlightedAnalyzerSuggestionIndex: (index: number) => void
+  onAnalyzerKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void
   analyzerChips: string[]
   matchedPoolCount: number
-  onAnalyze: (cardName: string) => void
+  onAnalyze: (cardName?: string) => void
 }
 
 export function AppSidebar({
@@ -51,13 +58,20 @@ export function AppSidebar({
   parsedPoolCount,
   analyzerSearch,
   setAnalyzerSearch,
+  analyzerSuggestions,
+  highlightedAnalyzerSuggestionIndex,
+  setHighlightedAnalyzerSuggestionIndex,
+  onAnalyzerKeyDown,
   analyzerChips,
   matchedPoolCount,
   onAnalyze,
 }: AppSidebarProps) {
+  const activeDescendant = analyzerSuggestions[highlightedAnalyzerSuggestionIndex]
+    ? `sidebar-analyzer-option-${highlightedAnalyzerSuggestionIndex}`
+    : undefined
+
   return (
     <aside className="flex w-[210px] shrink-0 flex-col overflow-y-auto border-r border-[var(--color-paper-line)] bg-[linear-gradient(180deg,#f2efe9,#e8e4dd)]">
-      {/* Ratings section */}
       <div className="border-b border-[var(--color-paper-line)]/60 px-3 py-4">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted-ink)]">
@@ -141,7 +155,7 @@ export function AppSidebar({
               {fileErrors.slice(0, 2).map((e) => (
                 <span key={e}>{e}</span>
               ))}
-              {fileErrors.length > 2 ? <span>…+{fileErrors.length - 2} more</span> : null}
+              {fileErrors.length > 2 ? <span>â€¦+{fileErrors.length - 2} more</span> : null}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -155,7 +169,6 @@ export function AppSidebar({
         ) : null}
       </div>
 
-      {/* Scryfall section */}
       <div className="border-b border-[var(--color-paper-line)]/60 px-3 py-4">
         <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted-ink)]">
           Scryfall data
@@ -183,7 +196,7 @@ export function AppSidebar({
               <DatabaseIcon data-icon="inline-start" />
             )}
             {isFetchingScryfall
-              ? `Fetching… ${scryfallProgress?.fetched ?? 0}/${scryfallProgress?.total ?? parsedPoolCount}`
+              ? `Fetchingâ€¦ ${scryfallProgress?.fetched ?? 0}/${scryfallProgress?.total ?? parsedPoolCount}`
               : "Fetch card data"}
           </Button>
         )}
@@ -196,42 +209,81 @@ export function AppSidebar({
               {scryfallErrors.slice(0, 3).map((e) => (
                 <span key={e}>{e}</span>
               ))}
-              {scryfallErrors.length > 3 ? (
-                <span>…+{scryfallErrors.length - 3} more</span>
-              ) : null}
+              {scryfallErrors.length > 3 ? <span>â€¦+{scryfallErrors.length - 3} more</span> : null}
             </AlertDescription>
           </Alert>
         ) : null}
       </div>
 
-      {/* Analyzer section */}
       <div className="flex flex-1 flex-col px-3 py-4">
         <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted-ink)]">
           Card Analyzer
         </p>
         <div className="flex gap-1.5">
           <Input
-            placeholder="Search any card…"
+            role="combobox"
+            aria-expanded={analyzerSuggestions.length > 0}
+            aria-controls={suggestionListId}
+            aria-activedescendant={activeDescendant}
+            aria-autocomplete="list"
+            placeholder="Search any cardâ€¦"
             value={analyzerSearch}
             onChange={(e) => setAnalyzerSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && analyzerSearch.trim()) {
-                onAnalyze(analyzerSearch.trim())
-              }
-            }}
+            onKeyDown={onAnalyzerKeyDown}
             className="h-8 flex-1 rounded-xl border-[var(--color-paper-line-strong)] bg-white/80 px-3 text-[10px]"
           />
           <Button
             size="sm"
             variant="outline"
             className="h-8 rounded-xl px-2"
-            disabled={!analyzerSearch.trim()}
-            onClick={() => onAnalyze(analyzerSearch.trim())}
+            disabled={!analyzerSearch.trim() && analyzerSuggestions.length === 0}
+            onClick={() => onAnalyze()}
             aria-label="Analyze card"
           >
             <SearchIcon className="size-3.5" />
           </Button>
         </div>
+
+        {analyzerSuggestions.length > 0 ? (
+          <div className="mt-2 rounded-xl border border-[var(--color-paper-line)] bg-white/85">
+            <div className="border-b border-[var(--color-paper-line)] px-3 py-2 text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--color-muted-ink)]">
+              Matches for {analyzerSearch.trim() || "rated cards"}
+            </div>
+            <ul id={suggestionListId} role="listbox" className="p-1.5">
+              {analyzerSuggestions.map((candidate, index) => {
+                const isActive = index === highlightedAnalyzerSuggestionIndex
+                return (
+                  <li key={candidate.normalizedName} role="presentation">
+                    <button
+                      id={`sidebar-analyzer-option-${index}`}
+                      type="button"
+                      role="option"
+                      aria-selected={isActive}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] transition-colors duration-100 focus-visible:outline-none",
+                        isActive
+                          ? "bg-[var(--color-ink)] text-[var(--color-paper-pane)]"
+                          : "text-[var(--color-ink-soft)] hover:bg-[var(--color-paper-pane)]",
+                      )}
+                      onMouseEnter={() => setHighlightedAnalyzerSuggestionIndex(index)}
+                      onClick={() => onAnalyze(candidate.name)}
+                    >
+                      <span className="font-medium">{candidate.name}</span>
+                      <span
+                        className={cn(
+                          "ml-2 text-[8px]",
+                          isActive ? "text-stone-400" : "text-[var(--color-muted-ink)]",
+                        )}
+                      >
+                        {candidate.type ?? candidate.source}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
 
         {analyzerChips.length > 0 ? (
           <div className="relative mt-3">

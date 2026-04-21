@@ -29,7 +29,7 @@ const mockDeck = {
   diagnostics: [],
   metrics: {
     creatureCount: 14, nonCreatureCount: 9, interactionCount: 6,
-    cheapPlays: 8, expensiveSpells: 3, averageCmc: 2.9, manaStability: 8.7,
+    cheapPlays: 8, expensiveSpells: 3, cardDrawCount: 1, averageCmc: 2.9, manaStability: 8.7,
     curveScore: 8.2, earlyBoardPresence: 7.8, removalDensity: 7.1,
     splashStrain: 0, manaSourceSufficiency: 8.5, topEndLoad: 3.1,
     nonCreatureSaturation: 4.2,

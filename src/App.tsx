@@ -93,6 +93,7 @@ function App() {
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0)
   const [analyzedCard, setAnalyzedCard] = useState<string | null>(null)
   const [analyzerSearch, setAnalyzerSearch] = useState("")
+  const [highlightedAnalyzerSuggestionIndex, setHighlightedAnalyzerSuggestionIndex] = useState(0)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [selectedDeckIndex, setSelectedDeckIndex] = useState(0)
   const [lastAddedCard, setLastAddedCard] = useState<string | null>(null)
@@ -106,6 +107,10 @@ function App() {
   const quickAddCandidates = useMemo(
     () => buildQuickAddCandidates(mergedRatings, scryfallData.size > 0 ? scryfallData : undefined),
     [mergedRatings, scryfallData],
+  )
+  const analyzerSuggestions = useMemo(
+    () => searchQuickAddCandidates(analyzerSearch, buildQuickAddCandidates(mergedRatings)).slice(0, 7),
+    [analyzerSearch, mergedRatings],
   )
   const parsedQuickAdd = useMemo(() => parseQuickAddInput(quickAddInput), [quickAddInput])
   const quickAddSuggestions = useMemo(
@@ -306,6 +311,40 @@ function App() {
     }
   }
 
+  function handleAnalyzeCard(candidateName?: string) {
+    const targetName = candidateName ?? analyzerSuggestions[highlightedAnalyzerSuggestionIndex]?.name ?? analyzerSearch.trim()
+    if (!targetName) {
+      return
+    }
+
+    setAnalyzedCard(targetName)
+    setAnalyzerSearch("")
+    setHighlightedAnalyzerSuggestionIndex(0)
+  }
+
+  function handleAnalyzerKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setHighlightedAnalyzerSuggestionIndex((current) =>
+        analyzerSuggestions.length === 0 ? 0 : Math.min(current + 1, analyzerSuggestions.length - 1),
+      )
+      return
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setHighlightedAnalyzerSuggestionIndex((current) =>
+        analyzerSuggestions.length === 0 ? 0 : Math.max(current - 1, 0),
+      )
+      return
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault()
+      handleAnalyzeCard()
+    }
+  }
+
   function handleQuickAddFromPool(entryName: string) {
     setQuickAddInput(entryName)
   }
@@ -357,13 +396,17 @@ function App() {
           scryfallErrors={scryfallErrors}
           parsedPoolCount={parsedPool.length}
           analyzerSearch={analyzerSearch}
-          setAnalyzerSearch={setAnalyzerSearch}
+          setAnalyzerSearch={(value) => {
+            setAnalyzerSearch(value)
+            setHighlightedAnalyzerSuggestionIndex(0)
+          }}
+          analyzerSuggestions={analyzerSuggestions}
+          highlightedAnalyzerSuggestionIndex={highlightedAnalyzerSuggestionIndex}
+          setHighlightedAnalyzerSuggestionIndex={setHighlightedAnalyzerSuggestionIndex}
+          onAnalyzerKeyDown={handleAnalyzerKeyDown}
           analyzerChips={analyzerChips}
           matchedPoolCount={matchedPoolCount}
-          onAnalyze={(cardName) => {
-            setAnalyzedCard(cardName)
-            setAnalyzerSearch("")
-          }}
+          onAnalyze={handleAnalyzeCard}
         />
         <PoolWorkspace
           parsedPoolCount={parsedPool.length}

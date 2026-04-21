@@ -13,6 +13,8 @@ export type CardRole = {
   colorCount: number
   maxSingleColorPip: number
   totalColoredPips: number
+  hasHybridMana: boolean
+  isHybridOnlyFlexible: boolean
   isCheapCreature: boolean
   isExpensiveFinisher: boolean
   isInteraction: boolean
@@ -89,6 +91,7 @@ export type DeckMetrics = {
   interactionCount: number
   cheapPlays: number
   expensiveSpells: number
+  cardDrawCount: number
   averageCmc: number
   manaStability: number
   curveScore: number
@@ -135,6 +138,7 @@ export type RankedDeckResult = {
 
 export type SynergyTag =
   | "tribal"
+  | "prepare"
   | "spellPayoff"
   | "keywordLord"
   | "graveyard"

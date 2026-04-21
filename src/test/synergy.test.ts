@@ -32,6 +32,8 @@ function makeDeckCard(normalizedName: string, quantity = 1): DeckCard {
         colorCount: 1,
         maxSingleColorPip: 1,
         totalColoredPips: 1,
+        hasHybridMana: false,
+        isHybridOnlyFlexible: false,
         isCheapCreature: false,
         isExpensiveFinisher: false,
         isInteraction: false,
@@ -63,6 +65,53 @@ function makePoolCard(normalizedName: string, quantity = 1): PoolCard {
 }
 
 describe("deriveCardSynergyTags", () => {
+  it("tags a prepare card as a prepare provider", () => {
+    const card = makeScryfallCard({
+      name: "Joined Researchers // Secret Rendezvous",
+      type_line: "Creature — Human Cleric Wizard // Sorcery",
+      layout: "prepare",
+      cmc: 2,
+      card_faces: [
+        {
+          name: "Joined Researchers",
+          oracle_text: "At the beginning of each end step, if an opponent has more cards in hand than you, this creature becomes prepared.",
+          keywords: [],
+          type_line: "Creature — Human Cleric Wizard",
+        },
+        {
+          name: "Secret Rendezvous",
+          oracle_text: "You and target opponent each draw three cards.",
+          keywords: [],
+          type_line: "Sorcery",
+        },
+      ],
+    })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.prepare).toBe("both")
+  })
+
+  it("tags a card that can make creatures become prepared as a prepare payoff", () => {
+    const card = makeScryfallCard({
+      name: "Skycoach Waypoint",
+      type_line: "Land",
+      oracle_text: "{3}, {T}: Target creature becomes prepared. (Only creatures with prepare spells can become prepared.)",
+      keywords: ["Prepared"],
+    })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.prepare).toBe("payoff")
+  })
+
+  it("tags a card that can make creatures become unprepared as a prepare payoff", () => {
+    const card = makeScryfallCard({
+      name: "Biblioplex Tomekeeper",
+      type_line: "Artifact Creature — Construct",
+      oracle_text: "When this creature enters, choose up to one —\n• Target creature becomes prepared.\n• Target creature becomes unprepared.",
+      keywords: ["Prepared"],
+    })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.prepare).toBe("payoff")
+  })
+
   it("tags an instant as spellPayoff provider", () => {
     const card = makeScryfallCard({ name: "Quick Strike", type_line: "Instant", oracle_text: "Deal 3 damage." })
     const tags = deriveCardSynergyTags(card, new Set())
@@ -224,6 +273,33 @@ describe("deriveCardSynergyTags", () => {
     expect(tags.spellPayoff).toBe("provider")
   })
 
+  it("does not treat a prepare card as a spellPayoff provider just because its back face is a sorcery", () => {
+    const card: ScryfallCard = {
+      name: "Landscape Painter // Vibrant Idea",
+      type_line: "Creature — Merfolk Wizard // Sorcery",
+      keywords: ["Prepared"],
+      layout: "prepare",
+      cmc: 2,
+      card_faces: [
+        {
+          name: "Landscape Painter",
+          type_line: "Creature — Merfolk Wizard",
+          oracle_text: "This creature enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)",
+          keywords: [],
+        },
+        {
+          name: "Vibrant Idea",
+          type_line: "Sorcery",
+          oracle_text: "Draw two cards.",
+          keywords: [],
+        },
+      ],
+    }
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.spellPayoff).toBeUndefined()
+    expect(tags.prepare).toBe("both")
+  })
+
   it("does not tag tribal when its subtype is not in the pool set", () => {
     const card = makeScryfallCard({ name: "Random Elf", type_line: "Creature — Elf" })
     const tags = deriveCardSynergyTags(card, new Set(["Zombie"]))
@@ -302,6 +378,18 @@ describe("deriveCardSynergyTags", () => {
     expect(tags.repartee).toBe("payoff")
   })
 
+  it("tags an opus card as both spellPayoff and expensiveSpells payoff", () => {
+    const card = makeScryfallCard({
+      name: "Expressive Firedancer",
+      type_line: "Creature — Human Sorcerer",
+      oracle_text: "Opus — Whenever you cast an instant or sorcery spell, this creature gets +1/+1 until end of turn. If five or more mana was spent to cast that spell, this creature also gains double strike until end of turn.",
+      keywords: ["Opus"],
+    })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.spellPayoff).toBe("payoff")
+    expect(tags.expensiveSpells).toBe("payoff")
+  })
+
   // Prismari: expensive spells
   it("tags a non-land card with CMC 5 as expensiveSpells provider", () => {
     const card = makeScryfallCard({ name: "Apex Devastator", type_line: "Creature", oracle_text: "Cascade, cascade, cascade, cascade.", cmc: 10 })
@@ -313,6 +401,30 @@ describe("deriveCardSynergyTags", () => {
     const card = makeScryfallCard({ name: "Prismari Professor", type_line: "Creature", oracle_text: "Whenever you cast a spell with mana value 5 or greater, create a 4/4 Elemental token." })
     const tags = deriveCardSynergyTags(card, new Set())
     expect(tags.expensiveSpells).toBe("payoff")
+  })
+
+  it("tags an increment card as both counters and expensiveSpells payoff", () => {
+    const card = makeScryfallCard({
+      name: "Cuboid Colony",
+      type_line: "Creature — Fractal",
+      oracle_text: "Increment (Whenever you cast a spell, if the amount of mana you spent is greater than this creature's power or toughness, put a +1/+1 counter on the creature.)",
+      keywords: ["Increment"],
+    })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.counters).toBe("both")
+    expect(tags.expensiveSpells).toBe("payoff")
+  })
+
+  it("treats a high flashback cost as an expensiveSpells provider", () => {
+    const card = makeScryfallCard({
+      name: "Molten Note",
+      type_line: "Sorcery",
+      oracle_text: "Molten Note deals damage to target creature equal to the amount of mana spent to cast this spell.\nFlashback {6}{R}{W}",
+      keywords: ["Flashback"],
+      cmc: 2,
+    })
+    const tags = deriveCardSynergyTags(card, new Set())
+    expect(tags.expensiveSpells).toBe("provider")
   })
 
   it("does not tag a land with CMC 0 as expensiveSpells provider", () => {
@@ -447,7 +559,7 @@ describe("computeSynergyBonus", () => {
     // Create a deck with very high synergy across many tags
     const allTags = new Map<string, ReturnType<typeof deriveCardSynergyTags>>()
     const deckCards: DeckCard[] = []
-    const tags = ["tribal", "graveyard", "tokens", "sacrifice", "counters", "spellPayoff", "keywordLord", "lifegain"] as const
+    const tags = ["tribal", "prepare", "graveyard", "tokens", "sacrifice", "counters", "spellPayoff", "keywordLord", "lifegain"] as const
     for (const tag of tags) {
       allTags.set(`provider-${tag}`, { [tag]: "provider" as const })
       allTags.set(`payoff-${tag}`, { [tag]: "payoff" as const })
@@ -468,6 +580,17 @@ describe("computeSynergyBonus", () => {
     const { breakdown } = computeSynergyBonus(deck, allTags)
     expect(breakdown.tribal).toBeDefined()
     expect(breakdown.tokens).toBeUndefined()
+  })
+
+  it("fires prepare synergy when the deck has both prepare cards and prepare payoffs", () => {
+    const allTags = new Map([
+      ["joined researchers", { prepare: "both" as const }],
+      ["skycoach waypoint", { prepare: "payoff" as const }],
+    ])
+    const deck = [makeDeckCard("joined researchers", 2), makeDeckCard("skycoach waypoint", 1)]
+    const { bonus, breakdown } = computeSynergyBonus(deck, allTags)
+    expect(bonus).toBeGreaterThan(0)
+    expect(breakdown.prepare).toBeDefined()
   })
 })
 

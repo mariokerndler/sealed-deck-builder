@@ -15,6 +15,7 @@ import type { RatingIndexEntry, SynergyRole, SynergyTag } from "@/lib/mtg/types"
 
 const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
   tribal: "Tribal",
+  prepare: "Prepare",
   spellPayoff: "Spell payoff",
   keywordLord: "Keyword lord",
   graveyard: "Graveyard",
@@ -188,7 +189,10 @@ export function CardAnalyzerModal({
                   ) : (
                     <div className="flex flex-col gap-3">
                       {analysis.synergyTags.map((tag) => (
-                        <div key={`${tag.tag}-${tag.role}-${tag.reason}`} className="rounded-2xl border border-border/60 bg-[var(--color-paper-pane)] px-3 py-2">
+                        <div
+                          key={`${tag.tag}-${tag.role}-${tag.reason}`}
+                          className="rounded-2xl border border-border/60 bg-[var(--color-paper-pane)] px-3 py-2"
+                        >
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="rounded-full bg-black/6 px-2.5 py-1 text-xs font-medium text-[var(--color-ink)]">
                               {SYNERGY_TAG_LABELS[tag.tag]}

@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest"
 import { analyzeCard } from "@/lib/mtg/analyze"
 import { EMPTY_COLOR_COUNTS } from "@/lib/mtg/constants"
+import { buildScryfallDataMap } from "@/lib/mtg/scryfall"
 import type { RatingIndexEntry } from "@/lib/mtg/types"
 import type { ScryfallCard, ScryfallDataMap } from "@/lib/mtg/scryfall"
 
@@ -40,6 +41,8 @@ function makeEntry(overrides: {
         colorCount: 1,
         maxSingleColorPip: overrides.maxSingleColorPip ?? 1,
         totalColoredPips: 1,
+        hasHybridMana: false,
+        isHybridOnlyFlexible: false,
         isCheapCreature: overrides.isCheapCreature ?? false,
         isExpensiveFinisher: false,
         isInteraction: overrides.isInteraction ?? false,
@@ -107,6 +110,54 @@ describe("analyzeCard", () => {
     expect(result!.scryfallCard).toBe(scry)
   })
 
+  it("resolves a full double-faced name back to the front-face rating entry", () => {
+    const entry = makeEntry({
+      normalizedName: "joined researchers",
+      displayName: "Joined Researchers",
+      isCreature: true,
+    })
+    const scry = makeScryfall({
+      name: "Joined Researchers // Secret Rendezvous",
+      type_line: "Creature // Sorcery",
+      card_faces: [
+        { name: "Joined Researchers", oracle_text: "First strike", keywords: [], type_line: "Creature" },
+        { name: "Secret Rendezvous", oracle_text: "Draw three cards.", keywords: [], type_line: "Sorcery" },
+      ],
+    })
+
+    const result = analyzeCard(
+      "Joined Researchers // Secret Rendezvous",
+      makeIndex([entry]),
+      buildScryfallDataMap([scry]),
+    )
+
+    expect(result).not.toBeNull()
+    expect(result!.card.displayName).toBe("Joined Researchers")
+    expect(result!.scryfallCard).toBe(scry)
+  })
+
+  it("resolves a back-face search to the front-face rating entry", () => {
+    const entry = makeEntry({
+      normalizedName: "joined researchers",
+      displayName: "Joined Researchers",
+      isCreature: true,
+    })
+    const scry = makeScryfall({
+      name: "Joined Researchers // Secret Rendezvous",
+      type_line: "Creature // Sorcery",
+      card_faces: [
+        { name: "Joined Researchers", oracle_text: "First strike", keywords: [], type_line: "Creature" },
+        { name: "Secret Rendezvous", oracle_text: "Draw three cards.", keywords: [], type_line: "Sorcery" },
+      ],
+    })
+
+    const result = analyzeCard("Secret Rendezvous", makeIndex([entry]), buildScryfallDataMap([scry]))
+
+    expect(result).not.toBeNull()
+    expect(result!.card.displayName).toBe("Joined Researchers")
+    expect(result!.scryfallCard).toBe(scry)
+  })
+
   describe("scoreBreakdown", () => {
     it("includes base rating with no adjustments for a vanilla creature", () => {
       const entry = makeEntry({ normalizedName: "vanilla", rating: 2.5, isCreature: true, cmc: 4 })
@@ -138,6 +189,17 @@ describe("analyzeCard", () => {
       const adj = result.scoreBreakdown.adjustments.find((a) => a.delta < 0 && a.label.includes("pip"))
       expect(adj).toBeDefined()
       expect(adj!.delta).toBeCloseTo(-0.18, 2)
+    })
+
+    it("does not subtract a pip penalty for hybrid-only color pressure", () => {
+      const entry = makeEntry({ normalizedName: "hybrid card", rating: 3.0, maxSingleColorPip: 1 })
+      entry.card.primaryCost = "{B/G}{B/G}"
+      entry.card.role.hasHybridMana = true
+      entry.card.role.isHybridOnlyFlexible = true
+
+      const result = analyzeCard("hybrid card", makeIndex([entry]), new Map())!
+      const adj = result.scoreBreakdown.adjustments.find((a) => a.delta < 0 && a.label.includes("pip"))
+      expect(adj).toBeUndefined()
     })
   })
 

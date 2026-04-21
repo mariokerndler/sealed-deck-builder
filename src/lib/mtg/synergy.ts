@@ -17,6 +17,7 @@ type RawEvidence = { provider: string[]; payoff: string[] }
 
 export const ALL_TAGS: SynergyTag[] = [
   "tribal",
+  "prepare",
   "graveyard",
   "tokens",
   "sacrifice",
@@ -31,6 +32,7 @@ export const ALL_TAGS: SynergyTag[] = [
 
 const TAG_WEIGHTS: Record<SynergyTag, number> = {
   tribal: 2.5,
+  prepare: 1.5,
   graveyard: 2.2,
   tokens: 2.0,
   sacrifice: 2.0,
@@ -98,6 +100,39 @@ function resolveOracleText(card: ScryfallCard): ResolvedText {
   }
 }
 
+function isPrepareCard(card: ScryfallCard): boolean {
+  if (card.layout === "prepare") {
+    return true
+  }
+
+  if (!card.card_faces || card.card_faces.length < 2) {
+    return false
+  }
+
+  const combinedText = card.card_faces.map((face) => face.oracle_text).join("\n")
+  return (
+    /prepared/i.test(combinedText) &&
+    /creature/i.test(card.card_faces[0]?.type_line ?? "") &&
+    /instant|sorcery/i.test(card.card_faces[1]?.type_line ?? "")
+  )
+}
+
+function getRulesTypeLine(card: ScryfallCard): string {
+  if (isPrepareCard(card)) {
+    return card.card_faces?.[0]?.type_line ?? card.type_line.split("//")[0]?.trim() ?? card.type_line
+  }
+
+  return card.type_line
+}
+
+function getRulesManaValue(card: ScryfallCard): number {
+  return Number(card.cmc ?? 0)
+}
+
+function isLandCard(card: ScryfallCard): boolean {
+  return /\bland\b/i.test(getRulesTypeLine(card))
+}
+
 function parseSubtypes(typeLine: string): string[] {
   const dashIndex = typeLine.indexOf("—")
   if (dashIndex === -1) return []
@@ -124,11 +159,65 @@ function getCreatureSubtypes(card: ScryfallCard): string[] {
 }
 
 function isSpellCard(card: ScryfallCard): boolean {
+  if (isPrepareCard(card)) {
+    return false
+  }
+
   if (!card.card_faces) {
     return /instant|sorcery/i.test(card.type_line)
   }
 
   return card.card_faces.some((face) => /instant|sorcery/i.test(face.type_line))
+}
+
+function parseManaSymbolCost(costExpression: string): number | null {
+  const symbols = [...costExpression.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]?.trim() ?? "")
+  if (symbols.length === 0) {
+    return null
+  }
+
+  let total = 0
+  for (const symbol of symbols) {
+    if (/^\d+$/.test(symbol)) {
+      total += Number(symbol)
+      continue
+    }
+
+    if (/^[WUBRGCS]$/i.test(symbol)) {
+      total += 1
+      continue
+    }
+
+    if (/^[WUBRGCS]\/[WUBRGCS]$/i.test(symbol) || /^\d+\/[WUBRGCS]$/i.test(symbol)) {
+      total += 1
+      continue
+    }
+
+    if (/^X$/i.test(symbol)) {
+      return null
+    }
+
+    total += 1
+  }
+
+  return total
+}
+
+function getManaIntensiveProviderReason(card: ScryfallCard, text: string): string | null {
+  const rulesManaValue = getRulesManaValue(card)
+  if (rulesManaValue >= 5 && !isLandCard(card)) {
+    return `CMC ${rulesManaValue} (5 or higher)`
+  }
+
+  const flashbackCost = text.match(/\bflashback\s+((?:\{[^}]+\})+)/i)?.[1]
+  if (flashbackCost) {
+    const total = parseManaSymbolCost(flashbackCost)
+    if (total !== null && total >= 5) {
+      return `flashback cost ${total}`
+    }
+  }
+
+  return null
 }
 
 function finalizeEvidence(raw: Record<SynergyTag, RawEvidence>): CardSynergyEvidenceMap {
@@ -211,7 +300,28 @@ export function deriveCardSynergyEvidence(
 ): CardSynergyEvidenceMap {
   const { text, keywords } = resolveOracleText(card)
   const raw = createRawEvidenceMap()
+  const prepareCard = isPrepareCard(card)
   const cardIsSpell = isSpellCard(card)
+
+  // prepare
+  if (prepareCard) {
+    addReason(raw.prepare, "provider", "prepare card creates a spell copy while prepared")
+  }
+
+  const preparePayoffReason = firstTextMatch(text, [
+    { re: /\benters prepared\b/i, reason: "enters prepared" },
+    { re: /\bbecomes prepared\b/i, reason: "becomes prepared" },
+    { re: /\bbecomes unprepared\b/i, reason: "becomes unprepared" },
+    { re: /\bwhile (?:it|this creature|this permanent)'?s? prepared\b/i, reason: "cares about being prepared" },
+    { re: /\bwhile (?:it|this creature|this permanent) is prepared\b/i, reason: "cares about being prepared" },
+    { re: /\bprepared creature\b/i, reason: "references a prepared creature" },
+    { re: /\bprepared permanent\b/i, reason: "references a prepared permanent" },
+    { re: /\bunprepared\b/i, reason: "references becoming unprepared" },
+  ])
+
+  if (preparePayoffReason) {
+    addReason(raw.prepare, "payoff", preparePayoffReason)
+  }
 
   // spellPayoff
   if (cardIsSpell) {
@@ -222,6 +332,7 @@ export function deriveCardSynergyEvidence(
     firstKeywordMatch(keywords, [
       { re: /prowess/i, reason: "prowess keyword" },
       { re: /magecraft/i, reason: "magecraft keyword" },
+      { re: /opus/i, reason: "opus keyword" },
     ]) ??
     firstTextMatch(text, [
       { re: /whenever you cast(?: or copy)? an instant or sorcery/i, reason: '"whenever you cast an instant or sorcery"' },
@@ -311,6 +422,8 @@ export function deriveCardSynergyEvidence(
     { re: /\bnumber of counters\b/i, reason: "scales with counter count" },
     { re: /\bfor each counter\b/i, reason: "triggers for each counter" },
     { re: /\bwhenever one or more \+1\/\+1 counters are put\b/i, reason: "triggers when counters are added" },
+  ]) ?? firstKeywordMatch(keywords, [
+    { re: /increment/i, reason: "increment keyword" },
   ])
 
   if (countersPayoffReason) {
@@ -433,6 +546,10 @@ export function deriveCardSynergyEvidence(
             re: /target (a |your |another )?creature.{0,80}(gets? \+[0-9]+\/|gains? (hexproof|indestructible|protection|trample|flying|first strike|double strike|vigilance)|\+[0-9]+\/\+[0-9]+)/i,
             reason: "instant or sorcery that pumps or protects a creature",
           },
+          {
+            re: /(one or two|up to two) target creatures?.{0,80}(each get|get|gain)/i,
+            reason: "instant or sorcery that targets one or more creatures",
+          },
         ])
       : null
 
@@ -460,17 +577,39 @@ export function deriveCardSynergyEvidence(
   }
 
   // expensiveSpells
-  const expensiveSpellProvider = card.cmc !== undefined && card.cmc >= 5 && !/\bland\b/i.test(card.type_line)
-  if (expensiveSpellProvider) {
-    addReason(raw.expensiveSpells, "provider", `CMC ${card.cmc ?? "?"} (5 or higher)`)
+  const expensiveSpellProviderReason = getManaIntensiveProviderReason(card, text)
+  if (expensiveSpellProviderReason) {
+    addReason(raw.expensiveSpells, "provider", expensiveSpellProviderReason)
   }
 
-  const expensiveSpellPayoffReason = firstTextMatch(text, [
+  const expensiveSpellPayoffReason =
+    firstKeywordMatch(keywords, [
+      { re: /opus/i, reason: "opus keyword" },
+      { re: /increment/i, reason: "increment keyword" },
+    ]) ??
+    firstTextMatch(text, [
     {
       re: /whenever you cast a spell with (mana value|converted mana cost) [5-9]/i,
       reason: "triggers when casting spells with MV 5+",
     },
+    {
+      re: /\bif five or more mana was spent to cast that spell\b/i,
+      reason: "checks whether five or more mana was spent",
+    },
+    {
+      re: /\bif five or more mana was spent to cast\b/i,
+      reason: "checks whether five or more mana was spent",
+    },
+    {
+      re: /\bamount of mana spent to cast that spell\b/i,
+      reason: "scales with mana spent to cast the spell",
+    },
+    {
+      re: /\bgreater than this creature's power or toughness\b/i,
+      reason: "increment checks mana spent against power or toughness",
+    },
     { re: /\bopus\b/i, reason: '"opus" ability' },
+    { re: /\bparadigm\b/i, reason: '"paradigm" spell engine' },
   ])
 
   if (expensiveSpellPayoffReason) {

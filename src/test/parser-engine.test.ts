@@ -88,6 +88,17 @@ describe("rating parser", () => {
       "pack a punch",
     ])
   })
+
+  it("treats hybrid mana as flexible pip pressure when parsing roles", () => {
+    const parsed = parseRatingFileContent(`var HYBRID = [
+      {name:"Lluwen, Exchange Student", castingcost1:"3(B/G)(B/G)", castingcost2:"none", type:"Creature", rarity:"U", myrating:"3.1", cmc:"5", colors:[0,0,2,0,2]}
+    ]`, "hybrid.js")
+
+    expect(parsed.cards[0]?.role.maxSingleColorPip).toBe(1)
+    expect(parsed.cards[0]?.role.hasHybridMana).toBe(true)
+    expect(parsed.cards[0]?.role.isHybridOnlyFlexible).toBe(true)
+    expect(parsed.cards[0]?.role.isConditionalCard).toBe(false)
+  })
 })
 
 describe("sealed engine", () => {
@@ -232,6 +243,95 @@ describe("sealed engine", () => {
     const result = evaluateSealedPool(pool, ratings)
     const hugeMaybe = result.decks[0]?.mainDeck.find((entry) => entry.card.displayName === "Huge Maybe")
     expect((hugeMaybe?.quantity ?? 0)).toBeLessThan(4)
+  })
+
+  it("allows mono-color candidates to play pure hybrid cards", () => {
+    const ratings = mergeRatingFiles([
+      parseRatingFileContent(`var HYBRIDMONO = [
+        {name:"Mire Initiate", castingcost1:"(B/G)(B/G)", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.0", cmc:"2", colors:[0,0,2,0,2]},
+        {name:"Night Pupil", castingcost1:"1B", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.9", cmc:"2", colors:[0,0,1,0,0]},
+        {name:"Grave Lesson", castingcost1:"2B", castingcost2:"none", type:"Sorcery", rarity:"C", myrating:"2.8", cmc:"3", colors:[0,0,1,0,0]},
+        {name:"Bog Bear", castingcost1:"3B", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.8", cmc:"4", colors:[0,0,1,0,0]},
+        {name:"Rotting Golem", castingcost1:"4", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.6", cmc:"4", colors:[0,0,0,0,0]}
+      ]`, "hybrid-mono.js"),
+    ])
+
+    const pool = parsePoolText(`
+      4 Mire Initiate
+      4 Night Pupil
+      4 Grave Lesson
+      4 Bog Bear
+      8 Rotting Golem
+    `)
+
+    const result = evaluateSealedPool(pool, ratings, {
+      includeMonoColor: true,
+      allowSplash: false,
+      candidateLimit: 3,
+      maxResults: 1,
+      variantsPerCandidate: 1,
+    })
+
+    expect(result.decks[0]?.colors.base.includes("G")).toBe(false)
+    expect(
+      result.decks[0]?.mainDeck.some((entry) => entry.card.displayName === "Mire Initiate"),
+    ).toBe(true)
+  })
+
+  it("rewards creatures and card draw more heavily in sealed builds when Scryfall text is available", () => {
+    const ratings = mergeRatingFiles([
+      parseRatingFileContent(`var SEALED = [
+        {name:"Campus Guide", castingcost1:"1W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.95", cmc:"2", colors:[1,0,0,0,0]},
+        {name:"Sky Scholar", castingcost1:"2U", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.95", cmc:"3", colors:[0,1,0,0,0]},
+        {name:"Lesson Collector", castingcost1:"3U", castingcost2:"none", type:"Creature", rarity:"U", myrating:"2.95", cmc:"4", colors:[0,1,0,0,0]},
+        {name:"Notebook Adept", castingcost1:"1W", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.95", cmc:"2", colors:[1,0,0,0,0]},
+        {name:"Study Break", castingcost1:"2U", castingcost2:"none", type:"Sorcery", rarity:"C", myrating:"2.95", cmc:"3", colors:[0,1,0,0,0]},
+        {name:"Dry Thesis", castingcost1:"2W", castingcost2:"none", type:"Enchantment", rarity:"C", myrating:"3.15", cmc:"3", colors:[1,0,0,0,0]},
+        {name:"Static Theory", castingcost1:"3U", castingcost2:"none", type:"Enchantment", rarity:"C", myrating:"3.1", cmc:"4", colors:[0,1,0,0,0]},
+        {name:"Stern Rebuttal", castingcost1:"1U", castingcost2:"none", type:"Instant", rarity:"C", myrating:"3.05", cmc:"2", colors:[0,1,0,0,0]}
+      ]`, "sealed.js"),
+    ])
+
+    const pool = parsePoolText(`
+      4 Campus Guide
+      4 Sky Scholar
+      4 Lesson Collector
+      4 Notebook Adept
+      4 Study Break
+      4 Dry Thesis
+      3 Static Theory
+      3 Stern Rebuttal
+    `)
+
+    const scryfallData = new Map([
+      ["campus guide", { name: "Campus Guide", type_line: "Creature", keywords: [], oracle_text: "Vigilance" }],
+      ["sky scholar", { name: "Sky Scholar", type_line: "Creature", keywords: [], oracle_text: "Flying" }],
+      ["lesson collector", { name: "Lesson Collector", type_line: "Creature", keywords: [], oracle_text: "When this creature enters, draw a card." }],
+      ["notebook adept", { name: "Notebook Adept", type_line: "Creature", keywords: [], oracle_text: "When this creature enters, draw a card." }],
+      ["study break", { name: "Study Break", type_line: "Sorcery", keywords: [], oracle_text: "Draw two cards." }],
+      ["dry thesis", { name: "Dry Thesis", type_line: "Enchantment", keywords: [], oracle_text: "Creatures you control get +0/+1." }],
+      ["static theory", { name: "Static Theory", type_line: "Enchantment", keywords: [], oracle_text: "Whenever you cast a noncreature spell, scry 1." }],
+      ["stern rebuttal", { name: "Stern Rebuttal", type_line: "Instant", keywords: [], oracle_text: "Counter target spell." }],
+    ])
+
+    const noData = evaluateSealedPool(pool, ratings, {
+      allowSplash: false,
+      candidateLimit: 1,
+      maxResults: 1,
+      variantsPerCandidate: 1,
+    })
+    const withData = evaluateSealedPool(pool, ratings, {
+      allowSplash: false,
+      candidateLimit: 1,
+      maxResults: 1,
+      variantsPerCandidate: 1,
+    }, scryfallData)
+
+    expect(withData.decks[0]?.colors.base).toEqual(["W", "U"])
+    expect(noData.decks[0]?.colors.base).toEqual(["W", "U"])
+    expect((withData.decks[0]?.totalScore ?? 0)).toBeGreaterThan(noData.decks[0]?.totalScore ?? 0)
+    expect(withData.decks[0]?.metrics.creatureCount ?? 0).toBeGreaterThanOrEqual(noData.decks[0]?.metrics.creatureCount ?? 0)
+    expect(withData.decks[0]?.metrics.cardDrawCount ?? 0).toBeGreaterThan(4)
   })
 })
 

@@ -5,7 +5,6 @@ import { RATING_PRESETS } from "@/lib/ratings/presets"
 
 const baseProps = {
   ratingFiles: [],
-  mergedRatingsSize: 0,
   fileErrors: [],
   conflicts: [],
   onLoadPreset: vi.fn(),
@@ -20,6 +19,10 @@ const baseProps = {
   parsedPoolCount: 0,
   analyzerSearch: "",
   setAnalyzerSearch: vi.fn(),
+  analyzerSuggestions: [],
+  highlightedAnalyzerSuggestionIndex: 0,
+  setHighlightedAnalyzerSuggestionIndex: vi.fn(),
+  onAnalyzerKeyDown: vi.fn(),
   analyzerChips: [],
   matchedPoolCount: 0,
   onAnalyze: vi.fn(),
@@ -89,8 +92,48 @@ describe("AppSidebar", () => {
 
   it("calls onAnalyze when Enter is pressed in analyzer search", () => {
     const onAnalyze = vi.fn()
-    render(<AppSidebar {...baseProps} analyzerSearch="Harsh Annotation" onAnalyze={onAnalyze} />)
+    render(
+      <AppSidebar
+        {...baseProps}
+        analyzerSearch="Harsh Annotation"
+        onAnalyze={onAnalyze}
+        onAnalyzerKeyDown={(e) => {
+          if (e.key === "Enter") onAnalyze("Harsh Annotation")
+        }}
+      />,
+    )
     fireEvent.keyDown(screen.getByPlaceholderText(/search any card/i), { key: "Enter" })
+    expect(onAnalyze).toHaveBeenCalledWith("Harsh Annotation")
+  })
+
+  it("renders analyzer suggestions under the sidebar search", () => {
+    render(
+      <AppSidebar
+        {...baseProps}
+        analyzerSearch="harsh"
+        analyzerSuggestions={[
+          { name: "Harsh Annotation", normalizedName: "harsh annotation", type: "Creature", source: "rating" },
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole("option", { name: /Harsh Annotation/i })).toBeInTheDocument()
+  })
+
+  it("calls onAnalyze with a suggestion name when clicked", () => {
+    const onAnalyze = vi.fn()
+    render(
+      <AppSidebar
+        {...baseProps}
+        analyzerSearch="harsh"
+        analyzerSuggestions={[
+          { name: "Harsh Annotation", normalizedName: "harsh annotation", type: "Creature", source: "rating" },
+        ]}
+        onAnalyze={onAnalyze}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("option", { name: /Harsh Annotation/i }))
     expect(onAnalyze).toHaveBeenCalledWith("Harsh Annotation")
   })
 })

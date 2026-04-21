@@ -13,6 +13,7 @@ import { COLOR_NAMES, type RankedDeckResult, type SynergyTag } from "@/lib/mtg"
 
 const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
   tribal: "Tribal",
+  prepare: "Prepare",
   spellPayoff: "Spell payoff",
   keywordLord: "Keyword lord",
   graveyard: "Graveyard",

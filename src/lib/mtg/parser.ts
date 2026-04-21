@@ -1,6 +1,7 @@
 import JSON5 from "json5"
 
 import { EMPTY_COLOR_COUNTS } from "@/lib/mtg/constants"
+import { analyzeManaCost } from "@/lib/mtg/mana"
 import { formatCardName, getCardNameAliases, normalizeCardName } from "@/lib/mtg/normalize"
 import { COLOR_SYMBOLS, type CardRole, type PoolEntry, type RatingCard, type RatingFileParseResult, type RatingMergeResult } from "@/lib/mtg/types"
 
@@ -45,9 +46,17 @@ function deriveCardRole(
   alternateCost: string | undefined,
 ): CardRole {
   const colorCounts = COLOR_SYMBOLS.map((symbol) => rawColors[symbol])
-  const colorCount = colorCounts.filter((count) => count > 0).length
-  const totalColoredPips = colorCounts.reduce((sum, count) => sum + count, 0)
-  const maxSingleColorPip = Math.max(0, ...colorCounts)
+  const parsedCost = analyzeManaCost(primaryCost)
+  const parsedIdentity = COLOR_SYMBOLS.map((symbol) => parsedCost.colorIdentity[symbol])
+  const parsedEffectivePips = COLOR_SYMBOLS.map((symbol) => parsedCost.effectivePips[symbol])
+  const colorCount = (parsedIdentity.some((count) => count > 0) ? parsedIdentity : colorCounts)
+    .filter((count) => count > 0).length
+  const totalColoredPips = parsedEffectivePips.some((count) => count > 0)
+    ? parsedEffectivePips.reduce((sum, count) => sum + count, 0)
+    : colorCounts.reduce((sum, count) => sum + count, 0)
+  const maxSingleColorPip = parsedEffectivePips.some((count) => count > 0)
+    ? Math.max(0, ...parsedEffectivePips)
+    : Math.max(0, ...colorCounts)
   const lowerType = type.toLowerCase()
   const isCreature = lowerType.includes("creature")
   const isInteraction =
@@ -64,6 +73,8 @@ function deriveCardRole(
     colorCount,
     maxSingleColorPip,
     totalColoredPips,
+    hasHybridMana: parsedCost.hasHybridMana,
+    isHybridOnlyFlexible: parsedCost.hybridOnly,
     isCheapCreature: isCreature && cmc <= 3,
     isExpensiveFinisher: isCreature && cmc >= 5,
     isInteraction,

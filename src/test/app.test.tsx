@@ -30,6 +30,8 @@ const mockDeck = {
           colorCount: 1,
           maxSingleColorPip: 1,
           totalColoredPips: 1,
+          hasHybridMana: false,
+          isHybridOnlyFlexible: false,
           isCheapCreature: false,
           isExpensiveFinisher: false,
           isInteraction: false,
@@ -53,6 +55,7 @@ const mockDeck = {
     interactionCount: 6,
     cheapPlays: 8,
     expensiveSpells: 3,
+    cardDrawCount: 1,
     averageCmc: 2.9,
     manaStability: 8.7,
     curveScore: 8.2,
@@ -183,6 +186,19 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+  })
+
+  it("shows quick-search suggestions in the left analyzer widget", async () => {
+    await renderApp()
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Secrets of Strixhaven/i })[0]!)
+    fireEvent.change(screen.getByPlaceholderText(/search any card/i), {
+      target: { value: "stand up" },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /Stand Up for Yourself/i })).toBeInTheDocument()
     })
   })
 
