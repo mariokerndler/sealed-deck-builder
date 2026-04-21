@@ -82,6 +82,7 @@ export function PoolWorkspace({
           aria-expanded={quickAddSuggestions.length > 0}
           aria-controls={suggestionListId}
           aria-activedescendant={activeDescendant}
+          aria-autocomplete="list"
           value={quickAddInput}
           onChange={(e) => {
             setQuickAddInput(e.target.value)
@@ -131,7 +132,7 @@ export function PoolWorkspace({
                   quickAddSuggestions.map((candidate, index) => {
                     const isActive = index === highlightedSuggestionIndex
                     return (
-                      <li key={candidate.normalizedName}>
+                      <li key={candidate.normalizedName} role="presentation">
                         <button
                           id={`quick-add-option-${index}`}
                           type="button"

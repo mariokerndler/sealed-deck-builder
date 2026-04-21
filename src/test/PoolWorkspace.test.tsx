@@ -130,4 +130,36 @@ describe("PoolWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /load sample/i }))
     expect(onLoadSample).toHaveBeenCalledOnce()
   })
+
+  it("highlights the pool row with bg-emerald-50 when lastAddedCard matches", () => {
+    const { container } = render(
+      <PoolWorkspace
+        {...baseProps}
+        parsedPool={[baseEntry]}
+        parsedPoolCount={1}
+        lastAddedCard="Last Gasp"
+      />,
+    )
+    const row = container.querySelector(".bg-emerald-50")
+    expect(row).toBeInTheDocument()
+  })
+
+  it("shows the queued quantity badge when quickAddCandidatesCount > 0", () => {
+    render(
+      <PoolWorkspace
+        {...baseProps}
+        quickAddCandidatesCount={248}
+        parsedQuickAddQuantity={2}
+      />,
+    )
+    expect(screen.getByText(/2× queued/i)).toBeInTheDocument()
+  })
+
+  it("shows raw textarea when toggle is clicked", () => {
+    render(<PoolWorkspace {...baseProps} />)
+    const toggle = screen.getByRole("button", { name: /raw paste/i })
+    fireEvent.click(toggle)
+    const grid = toggle.closest("div")?.parentElement?.parentElement?.querySelector(".grid")
+    expect(grid?.className).toContain("grid-rows-[1fr]")
+  })
 })
