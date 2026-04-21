@@ -323,4 +323,67 @@ describe("synergy engine integration", () => {
       expect(typeof deck.synergyBreakdown).toBe("object")
     }
   })
+
+  it("keeps a synergy-heavy candidate alive when candidate ranking is capped", () => {
+    const ratings = mergeRatingFiles([
+      parseRatingFileContent(`var CANDIDATES = [
+        {name:"Grave Surveyor", castingcost1:"1BG", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.02", cmc:"3", colors:[0,0,1,0,1]},
+        {name:"Rot Note", castingcost1:"BG", castingcost2:"none", type:"Sorcery", rarity:"C", myrating:"2.98", cmc:"2", colors:[0,0,1,0,1]},
+        {name:"Moss Recycler", castingcost1:"2BG", castingcost2:"none", type:"Creature", rarity:"U", myrating:"2.96", cmc:"4", colors:[0,0,1,0,1]},
+        {name:"Tomb Scholar", castingcost1:"1BG", castingcost2:"none", type:"Creature", rarity:"U", myrating:"2.96", cmc:"3", colors:[0,0,1,0,1]},
+        {name:"Gravepath Druid", castingcost1:"BG", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.94", cmc:"2", colors:[0,0,1,0,1]},
+        {name:"Ember Adept", castingcost1:"UR", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.04", cmc:"2", colors:[0,1,0,1,0]},
+        {name:"River Insight", castingcost1:"1UR", castingcost2:"none", type:"Sorcery", rarity:"C", myrating:"3.02", cmc:"3", colors:[0,1,0,1,0]},
+        {name:"Spark Lesson", castingcost1:"UR", castingcost2:"none", type:"Instant", rarity:"C", myrating:"3.04", cmc:"2", colors:[0,1,0,1,0]},
+        {name:"Wave Scholar", castingcost1:"UR", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.01", cmc:"2", colors:[0,1,0,1,0]},
+        {name:"Prism Pupil", castingcost1:"1UR", castingcost2:"none", type:"Creature", rarity:"C", myrating:"3.0", cmc:"3", colors:[0,1,0,1,0]},
+        {name:"Neutral Filler", castingcost1:"3", castingcost2:"none", type:"Creature", rarity:"C", myrating:"2.7", cmc:"3", colors:[0,0,0,0,0]}
+      ]`, "candidates.js"),
+    ])
+
+    const pool = parsePoolText(`
+      4 Grave Surveyor
+      4 Rot Note
+      4 Moss Recycler
+      4 Tomb Scholar
+      4 Gravepath Druid
+      4 Ember Adept
+      4 River Insight
+      4 Spark Lesson
+      4 Wave Scholar
+      4 Prism Pupil
+      4 Neutral Filler
+    `)
+
+    const scryfallData = new Map([
+      ["grave surveyor", { name: "Grave Surveyor", type_line: "Creature", keywords: ["Surveil"], oracle_text: "When this creature enters, surveil 2. Return target creature card from your graveyard to your hand." }],
+      ["rot note", { name: "Rot Note", type_line: "Sorcery", keywords: ["Flashback"], oracle_text: "Draw two cards, then discard a card.\nFlashback {3}{B}{G}" }],
+      ["moss recycler", { name: "Moss Recycler", type_line: "Creature", keywords: [], oracle_text: "When this creature enters, return target creature card from your graveyard to your hand." }],
+      ["tomb scholar", { name: "Tomb Scholar", type_line: "Creature", keywords: [], oracle_text: "Whenever one or more cards left your graveyard this turn, put a +1/+1 counter on this creature." }],
+      ["gravepath druid", { name: "Gravepath Druid", type_line: "Creature", keywords: [], oracle_text: "Exile a creature card from your graveyard: Add one mana of any color." }],
+      ["ember adept", { name: "Ember Adept", type_line: "Creature", keywords: [], oracle_text: "Haste" }],
+      ["river insight", { name: "River Insight", type_line: "Sorcery", keywords: [], oracle_text: "Draw two cards." }],
+      ["spark lesson", { name: "Spark Lesson", type_line: "Instant", keywords: [], oracle_text: "Deal 3 damage to any target." }],
+      ["wave scholar", { name: "Wave Scholar", type_line: "Creature", keywords: [], oracle_text: "When this creature enters, draw a card." }],
+      ["prism pupil", { name: "Prism Pupil", type_line: "Creature", keywords: [], oracle_text: "Ward {1}" }],
+    ])
+
+    const noData = evaluateSealedPool(pool, ratings, {
+      allowSplash: false,
+      candidateLimit: 1,
+      maxResults: 1,
+      variantsPerCandidate: 1,
+    })
+    const withData = evaluateSealedPool(pool, ratings, {
+      allowSplash: false,
+      candidateLimit: 1,
+      maxResults: 1,
+      variantsPerCandidate: 1,
+    }, scryfallData)
+
+    expect(noData.decks[0]?.colors.base).not.toEqual(["B", "G"])
+    expect(withData.decks[0]?.colors.base).toEqual(["B", "G"])
+    expect(withData.decks[0]?.scoreBreakdown.synergyBonus ?? 0).toBeGreaterThan(0)
+    expect(withData.decks[0]?.synergyBreakdown.graveyard).toBeDefined()
+  })
 })

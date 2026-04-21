@@ -150,6 +150,13 @@ export type SynergyRole = "provider" | "payoff" | "both"
 
 export type CardSynergyTags = Partial<Record<SynergyTag, SynergyRole>>
 
+export type SynergyEvidence = {
+  role: SynergyRole
+  reasons: string[]
+}
+
+export type CardSynergyEvidenceMap = Partial<Record<SynergyTag, SynergyEvidence>>
+
 export type SynergyBreakdown = Partial<Record<SynergyTag, number>>
 
 export type SynergyCardContributor = {
@@ -175,6 +182,39 @@ export type SearchConfig = {
   maxResults: number
   candidateLimit: number
   variantsPerCandidate: number
+}
+
+export type RoleFlag = {
+  label: string
+  active: boolean
+  explanation: string
+}
+
+export type SynergyTagAnalysis = {
+  tag: SynergyTag
+  role: SynergyRole
+  /** The specific keyword name or oracle text fragment that triggered this tag */
+  reason: string
+}
+
+export type ScoreAdjustment = {
+  label: string
+  delta: number
+}
+
+export type CardAnalysis = {
+  card: RatingCard
+  /** null when Scryfall data is not loaded */
+  scryfallCard: import("@/lib/mtg/scryfall").ScryfallCard | null
+  roleFlags: RoleFlag[]
+  /** Empty array when scryfallCard is null */
+  synergyTags: SynergyTagAnalysis[]
+  scoreBreakdown: {
+    baseRating: number
+    /** Only non-zero adjustments are included */
+    adjustments: ScoreAdjustment[]
+    total: number
+  }
 }
 
 export type CardRegion = {

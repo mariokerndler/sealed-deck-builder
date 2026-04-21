@@ -22,14 +22,11 @@ import type {
   SearchConfig,
   SynergyBreakdown,
   SynergyDetail,
+  SynergyTag,
 } from "@/lib/mtg/types"
 import { COLOR_SYMBOLS } from "@/lib/mtg/types"
 import type { ScryfallDataMap } from "@/lib/mtg/scryfall"
 import { buildAllTags, computeSynergyBonus } from "@/lib/mtg/synergy"
-
-type SynergyContext = {
-  allTags: Map<string, CardSynergyTags>
-}
 
 type CandidateConfig = DeckColorIdentity
 
@@ -38,6 +35,8 @@ type CandidateEvaluation = {
   poolStrength: number
   playableCards: PoolCard[]
   fixingCount: number
+  allTags: Map<string, CardSynergyTags>
+  activeSynergyTags: SynergyTag[]
 }
 
 type VariantProfile = {
@@ -58,6 +57,12 @@ type ResolvedPool = {
 type ManaRequirements = {
   sources: ColorCountMap
   earlyPressure: ColorCountMap
+}
+
+type CandidateSynergySnapshot = {
+  allTags: Map<string, CardSynergyTags>
+  activeSynergyTags: SynergyTag[]
+  potentialBonus: number
 }
 
 const VARIANT_PROFILES: VariantProfile[] = [
@@ -125,6 +130,49 @@ function resolvePool(pool: PoolEntry[], ratings: RatingMergeResult): ResolvedPoo
   }
 
   return { poolCards, missingCards }
+}
+
+function toSynergyDeckCards(poolCards: PoolCard[]): DeckCard[] {
+  return poolCards.map((poolCard) => ({
+    card: poolCard.ratingCard,
+    quantity: poolCard.quantity,
+    adjustedScore: 0,
+    notes: [],
+  }))
+}
+
+function getCandidateSynergySnapshot(
+  playableCards: PoolCard[],
+  scryfallData?: ScryfallDataMap,
+): CandidateSynergySnapshot {
+  if (!scryfallData || playableCards.length === 0) {
+    return {
+      allTags: new Map(),
+      activeSynergyTags: [],
+      potentialBonus: 0,
+    }
+  }
+
+  const allTags = buildAllTags(playableCards, scryfallData)
+  if (allTags.size === 0) {
+    return {
+      allTags,
+      activeSynergyTags: [],
+      potentialBonus: 0,
+    }
+  }
+
+  const preview = computeSynergyBonus(toSynergyDeckCards(playableCards), allTags)
+  const activeSynergyTags = Object.entries(preview.breakdown)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2)
+    .map(([tag]) => tag as SynergyTag)
+
+  return {
+    allTags,
+    activeSynergyTags,
+    potentialBonus: Math.min(preview.bonus * 0.75, 5.0),
+  }
 }
 
 function getAllCandidateConfigs(config: SearchConfig): CandidateConfig[] {
@@ -234,6 +282,7 @@ function scorePoolCardForCandidate(card: RatingCard, candidate: CandidateConfig)
 function rankCandidateConfigs(
   poolCards: PoolCard[],
   config: SearchConfig,
+  scryfallData?: ScryfallDataMap,
 ): CandidateEvaluation[] {
   const candidates = getAllCandidateConfigs(config)
 
@@ -265,13 +314,15 @@ function rankCandidateConfigs(
       0,
     )
     const playableDepth = playableCards.reduce((sum, poolCard) => sum + poolCard.quantity, 0)
+    const synergySnapshot = getCandidateSynergySnapshot(playableCards, scryfallData)
 
     let poolStrength =
       topCardQuality +
       playableDepth * 0.35 +
       creatureDepth * 0.5 +
       interactionDepth * 0.45 +
-      fixingCount * 0.35
+      fixingCount * 0.35 +
+      synergySnapshot.potentialBonus
 
     if (candidate.base.length === 1) {
       poolStrength -= 2.2
@@ -304,6 +355,8 @@ function rankCandidateConfigs(
       poolStrength,
       playableCards,
       fixingCount,
+      allTags: synergySnapshot.allTags,
+      activeSynergyTags: synergySnapshot.activeSynergyTags,
     }
   })
 
@@ -318,10 +371,27 @@ function getBaseCardScore(
   candidate: CandidateConfig,
   profile: VariantProfile,
   copyIndex: number,
+  allTags?: Map<string, CardSynergyTags>,
+  activeSynergyTags: SynergyTag[] = [],
 ): number {
   const colors = getCardColors(card)
   const isSplashCard = Boolean(candidate.splash && colors.includes(candidate.splash))
   let score = scorePoolCardForCandidate(card, candidate)
+  let synergyPreselectionBonus = 0
+
+  if (allTags && activeSynergyTags.length > 0) {
+    const cardTags = allTags.get(card.normalizedName)
+    for (const tag of activeSynergyTags) {
+      const role = cardTags?.[tag]
+      if (role === "provider") {
+        synergyPreselectionBonus += 0.12
+      } else if (role === "payoff") {
+        synergyPreselectionBonus += 0.18
+      } else if (role === "both") {
+        synergyPreselectionBonus += 0.22
+      }
+    }
+  }
 
   if (card.isCreature) {
     score += 0.2
@@ -361,6 +431,8 @@ function getBaseCardScore(
     score -= copyIndex * 0.18
   }
 
+  score += Math.min(synergyPreselectionBonus, 0.24)
+
   return score
 }
 
@@ -378,6 +450,8 @@ function buildBaselineDeck(
         candidateEvaluation.candidate,
         profile,
         copyIndex,
+        candidateEvaluation.allTags,
+        candidateEvaluation.activeSynergyTags,
       ),
       notes: [`Built from ${profile.label} profile.`],
     })),
@@ -635,7 +709,6 @@ function evaluateDeckScore(
   candidateEvaluation: CandidateEvaluation,
   profile: VariantProfile,
   basicLands: ColorCountMap,
-  synergyContext?: SynergyContext,
 ): { total: number; metrics: DeckMetrics; breakdown: ScoreBreakdown; synergyBreakdown: SynergyBreakdown; synergyDetail: SynergyDetail } {
   const metrics = getDeckMetrics(mainDeck, candidateEvaluation.candidate, basicLands)
   const flattened = flattenDeck(mainDeck)
@@ -659,8 +732,8 @@ function evaluateDeckScore(
     ? Math.min(candidateEvaluation.fixingCount * 0.4, 2.0)
     : 0
 
-  const { bonus: synergyBonus, breakdown: synergyBreakdown, detail: synergyDetail } = synergyContext
-    ? computeSynergyBonus(mainDeck, synergyContext.allTags)
+  const { bonus: synergyBonus, breakdown: synergyBreakdown, detail: synergyDetail } = candidateEvaluation.allTags.size > 0
+    ? computeSynergyBonus(mainDeck, candidateEvaluation.allTags)
     : { bonus: 0, breakdown: {}, detail: {} }
 
   // When expensiveSpells synergy is active (Prismari-style opus archetype), the deck is
@@ -736,12 +809,19 @@ function getPoolQuantityMap(poolCards: PoolCard[]): Map<string, number> {
 function addDeckCopy(
   deckMap: Map<string, DeckCard>,
   card: RatingCard,
-  candidate: CandidateConfig,
+  candidateEvaluation: CandidateEvaluation,
   profile: VariantProfile,
 ): void {
   const existing = deckMap.get(card.normalizedName)
   const copyIndex = existing?.quantity ?? 0
-  const score = getBaseCardScore(card, candidate, profile, copyIndex)
+  const score = getBaseCardScore(
+    card,
+    candidateEvaluation.candidate,
+    profile,
+    copyIndex,
+    candidateEvaluation.allTags,
+    candidateEvaluation.activeSynergyTags,
+  )
 
   if (!existing) {
     deckMap.set(card.normalizedName, {
@@ -818,6 +898,8 @@ function normalizeDeckSize(
           candidateEvaluation.candidate,
           profile,
           used,
+          candidateEvaluation.allTags,
+          candidateEvaluation.activeSynergyTags,
         )
 
         return [
@@ -833,20 +915,31 @@ function normalizeDeckSize(
       break
     }
 
-    addDeckCopy(normalized, nextCard.card, candidateEvaluation.candidate, profile)
+    addDeckCopy(normalized, nextCard.card, candidateEvaluation, profile)
   }
 
   return [...normalized.values()].sort((a, b) => b.adjustedScore - a.adjustedScore)
 }
 
-function mergeFlatCards(cards: RatingCard[], candidate: CandidateConfig, profile: VariantProfile): DeckCard[] {
+function mergeFlatCards(
+  cards: RatingCard[],
+  candidateEvaluation: CandidateEvaluation,
+  profile: VariantProfile,
+): DeckCard[] {
   const countByName = new Map<string, number>()
   const merged = new Map<string, DeckCard>()
 
   for (const card of cards) {
     const copyIndex = countByName.get(card.normalizedName) ?? 0
     countByName.set(card.normalizedName, copyIndex + 1)
-    const score = getBaseCardScore(card, candidate, profile, copyIndex)
+    const score = getBaseCardScore(
+      card,
+      candidateEvaluation.candidate,
+      profile,
+      copyIndex,
+      candidateEvaluation.allTags,
+      candidateEvaluation.activeSynergyTags,
+    )
 
     const existing = merged.get(card.normalizedName)
     if (!existing) {
@@ -871,7 +964,6 @@ function refineDeck(
   candidateEvaluation: CandidateEvaluation,
   profile: VariantProfile,
   config: SearchConfig,
-  synergyContext?: SynergyContext,
 ): DeckCard[] {
   let deckCards = flattenDeck(baseline)
 
@@ -885,18 +977,18 @@ function refineDeck(
     })
 
   const scoreFlatDeck = (cards: RatingCard[]) => {
-    const merged = mergeFlatCards(cards, candidateEvaluation.candidate, profile)
+    const merged = mergeFlatCards(cards, candidateEvaluation, profile)
     const landCount = suggestLandCount(
         getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS()),
         profile,
         config,
       )
     const basics = suggestBasicLands(merged, candidateEvaluation.candidate, landCount)
-    return evaluateDeckScore(merged, candidateEvaluation, profile, basics, synergyContext).total
+    return evaluateDeckScore(merged, candidateEvaluation, profile, basics).total
   }
 
   const enforceThresholds = () => {
-    let merged = mergeFlatCards(deckCards, candidateEvaluation.candidate, profile)
+    let merged = mergeFlatCards(deckCards, candidateEvaluation, profile)
     let metrics = getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS())
 
     const byWorstShape = [...deckCards].sort((a, b) => {
@@ -915,7 +1007,7 @@ function refineDeck(
       deckCards = [...deckCards.slice(0, removeIndex), ...deckCards.slice(removeIndex + 1)]
       deckCards.push(add)
       unused.splice(unused.indexOf(add), 1)
-      merged = mergeFlatCards(deckCards, candidateEvaluation.candidate, profile)
+      merged = mergeFlatCards(deckCards, candidateEvaluation, profile)
       metrics = getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS())
     }
 
@@ -927,7 +1019,7 @@ function refineDeck(
       deckCards = [...deckCards.slice(0, removeIndex), ...deckCards.slice(removeIndex + 1)]
       deckCards.push(add)
       unused.splice(unused.indexOf(add), 1)
-      merged = mergeFlatCards(deckCards, candidateEvaluation.candidate, profile)
+      merged = mergeFlatCards(deckCards, candidateEvaluation, profile)
       metrics = getDeckMetrics(merged, candidateEvaluation.candidate, EMPTY_COLOR_COUNTS())
     }
   }
@@ -965,7 +1057,7 @@ function refineDeck(
   }
 
   return normalizeDeckSize(
-    mergeFlatCards(deckCards, candidateEvaluation.candidate, profile),
+    mergeFlatCards(deckCards, candidateEvaluation, profile),
     candidateEvaluation,
     profile,
     config.spellSlots,
@@ -1102,10 +1194,7 @@ export function evaluateSealedPool(
 } {
   const config = { ...DEFAULT_SEARCH_CONFIG, ...searchConfig }
   const { poolCards, missingCards } = resolvePool(poolEntries, ratings)
-  const synergyContext: SynergyContext | undefined = scryfallData
-    ? { allTags: buildAllTags(poolCards, scryfallData) }
-    : undefined
-  const rankedCandidates = rankCandidateConfigs(poolCards, config)
+  const rankedCandidates = rankCandidateConfigs(poolCards, config, scryfallData)
   const rankedDecks: RankedDeckResult[] = []
 
   for (const candidateEvaluation of rankedCandidates) {
@@ -1113,7 +1202,7 @@ export function evaluateSealedPool(
       const baseline = buildBaselineDeck(candidateEvaluation, profile, config)
       const refined = normalizeDeckSize(
         enforcePoolLegality(
-          refineDeck(baseline, candidateEvaluation, profile, config, synergyContext),
+          refineDeck(baseline, candidateEvaluation, profile, config),
           candidateEvaluation,
         ),
         candidateEvaluation,
@@ -1131,7 +1220,7 @@ export function evaluateSealedPool(
         config,
       )
       const basicLands = suggestBasicLands(refined, candidateEvaluation.candidate, landCount)
-      const evaluation = evaluateDeckScore(refined, candidateEvaluation, profile, basicLands, synergyContext)
+      const evaluation = evaluateDeckScore(refined, candidateEvaluation, profile, basicLands)
       const fullDeck = [
         ...refined,
         ...COLOR_SYMBOLS.filter((color) => basicLands[color] > 0).map((color) => ({
