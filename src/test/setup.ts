@@ -8,8 +8,12 @@ Object.assign(navigator, {
   },
 })
 
+interface StorageWithStore extends Storage {
+  __store__?: Record<string, string>
+}
+
 // Mock localStorage for tests
-let store: Record<string, string> = {}
+const store: Record<string, string> = {}
 
 const localStorageMock = Object.create(Storage.prototype)
 Object.defineProperty(localStorageMock, "__store__", {
@@ -18,28 +22,23 @@ Object.defineProperty(localStorageMock, "__store__", {
 })
 
 // Override Storage.prototype methods with implementations that use our store
-const originalGetItem = Storage.prototype.getItem
-const originalSetItem = Storage.prototype.setItem
-const originalRemoveItem = Storage.prototype.removeItem
-const originalClear = Storage.prototype.clear
-
 Storage.prototype.getItem = function(key: string) {
-  const s = (this as any).__store__ || store
+  const s = (this as StorageWithStore).__store__ || store
   return Object.prototype.hasOwnProperty.call(s, key) ? s[key] : null
 }
 
 Storage.prototype.setItem = function(key: string, value: string) {
-  const s = (this as any).__store__ || store
+  const s = (this as StorageWithStore).__store__ || store
   s[key] = String(value)
 }
 
 Storage.prototype.removeItem = function(key: string) {
-  const s = (this as any).__store__ || store
+  const s = (this as StorageWithStore).__store__ || store
   delete s[key]
 }
 
 Storage.prototype.clear = function() {
-  const s = (this as any).__store__ || store
+  const s = (this as StorageWithStore).__store__ || store
   for (const key in s) {
     delete s[key]
   }

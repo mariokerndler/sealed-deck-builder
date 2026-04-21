@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -20,7 +20,9 @@ export function useResizablePanel(
 ): { width: number; handleMouseDown: React.MouseEventHandler } {
   const [width, setWidth] = useState(() => readFromStorage(key, defaultWidth, min, max))
   const widthRef = useRef(width)
-  widthRef.current = width
+  useLayoutEffect(() => {
+    widthRef.current = width
+  }, [width])
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null)
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
