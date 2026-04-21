@@ -1,11 +1,17 @@
-// src/components/CardAnalyzerModal.tsx
-import { useEffect } from "react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import { analyzeCard } from "@/lib/mtg/analyze"
-import type { RatingIndexEntry, SynergyRole, SynergyTag } from "@/lib/mtg/types"
 import type { ScryfallDataMap } from "@/lib/mtg/scryfall"
+import type { RatingIndexEntry, SynergyRole, SynergyTag } from "@/lib/mtg/types"
 
 const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
   tribal: "Tribal",
@@ -22,9 +28,9 @@ const SYNERGY_TAG_LABELS: Record<SynergyTag, string> = {
 }
 
 const ROLE_BADGE_COLORS: Record<SynergyRole, string> = {
-  provider: "bg-sky-100 text-sky-800",
-  payoff: "bg-emerald-100 text-emerald-800",
-  both: "bg-violet-100 text-violet-800",
+  provider: "bg-stone-200 text-stone-800",
+  payoff: "bg-stone-300 text-stone-900",
+  both: "bg-stone-800 text-stone-100",
 }
 
 type Props = {
@@ -35,154 +41,177 @@ type Props = {
   onClose: () => void
 }
 
-export function CardAnalyzerModal({ cardName, ratingIndex, scryfallData, poolSubtypes, onClose }: Props) {
-  // Close on Escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [onClose])
-
+export function CardAnalyzerModal({
+  cardName,
+  ratingIndex,
+  scryfallData,
+  poolSubtypes,
+  onClose,
+}: Props) {
   const analysis = analyzeCard(cardName, ratingIndex, scryfallData, poolSubtypes)
 
   return (
-    // Backdrop
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      {/* Modal — stopPropagation prevents backdrop click from firing when clicking inside */}
-      <div
-        className="relative flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-        style={{ maxHeight: "85vh" }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <DialogContent className="overflow-hidden p-0" showCloseButton>
         {analysis === null ? (
-          // Not found state
-          <div className="flex flex-col gap-3 p-6">
-            <div className="flex items-start justify-between">
-              <p className="font-semibold text-stone-800">Card not found</p>
-              <Button size="sm" variant="ghost" onClick={onClose}>✕</Button>
+          <div className="flex flex-col gap-4 p-6">
+            <DialogHeader>
+              <DialogTitle>Card not found</DialogTitle>
+              <DialogDescription>
+                {cardName} was not found in the loaded rating files. Check the spelling or load the
+                correct rating set.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              "{cardName}" was not found in the loaded rating files. Check the spelling or load the correct rating set.
-            </p>
           </div>
         ) : (
           <>
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-4">
-              <div className="min-w-0">
-                <h2 className="text-lg font-bold text-stone-900">{analysis.card.displayName}</h2>
-                <p className="mt-0.5 text-sm text-stone-500">
-                  {analysis.card.type} · {analysis.card.rarity} · CMC {analysis.card.cmc}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="rounded-lg bg-amber-100 px-3 py-1 text-base font-bold text-amber-800">
-                  {analysis.card.rating.toFixed(1)}
-                </span>
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-stone-400" onClick={onClose}>
-                  ✕
-                </Button>
+            <div className="border-b border-border/70 bg-[linear-gradient(180deg,rgba(255,249,235,0.9),rgba(250,245,234,0.96))] px-6 py-5">
+              <div className="flex items-start justify-between gap-4 pr-8">
+                <DialogHeader className="gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="bg-black/6 text-[var(--color-ink)]">
+                      Analyzer
+                    </Badge>
+                    <Badge variant="outline">{analysis.card.rarity}</Badge>
+                  </div>
+                  <DialogTitle className="text-2xl">{analysis.card.displayName}</DialogTitle>
+                  <DialogDescription>
+                    {analysis.card.type} · CMC {analysis.card.cmc}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="rounded-2xl border border-black/10 bg-black/4 px-3 py-2 text-right">
+                  <p className="text-xs font-medium uppercase tracking-[0.24em] text-[var(--color-muted-ink)]">
+                    Rating
+                  </p>
+                  <p className="text-2xl font-semibold text-[var(--color-ink)]">
+                    {analysis.card.rating.toFixed(1)}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Scrollable body */}
-            <ScrollArea className="flex-1">
-              <div className="flex flex-col gap-5 px-6 py-5">
-
-                {/* Oracle text — only when scryfall data loaded */}
-                {analysis.scryfallCard && (
-                  <div className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-3">
-                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-stone-400">Oracle text</p>
-                    <p className="whitespace-pre-wrap text-sm italic leading-relaxed text-stone-600">
+            <ScrollArea className="max-h-[min(70vh,44rem)]">
+              <div className="flex flex-col gap-6 px-6 py-5">
+                {analysis.scryfallCard ? (
+                  <section className="rounded-[var(--radius-xl)] border border-border/70 bg-white/70 px-4 py-3 shadow-[var(--shadow-soft)]">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-muted-ink)]">
+                      Oracle text
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-ink-soft)]">
                       {analysis.scryfallCard.card_faces
-                        ? analysis.scryfallCard.card_faces.map((f) => f.oracle_text).join("\n\n")
+                        ? analysis.scryfallCard.card_faces
+                            .map((face) => face.oracle_text)
+                            .filter(Boolean)
+                            .join("\n\n")
                         : (analysis.scryfallCard.oracle_text ?? "")}
                     </p>
-                  </div>
-                )}
+                  </section>
+                ) : null}
 
-                {/* Synergy tags — only when scryfall data loaded */}
-                {analysis.scryfallCard && (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">Synergy tags</p>
-                    {analysis.synergyTags.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No synergy tags detected.</p>
-                    ) : (
-                      <div className="flex flex-col gap-3">
-                        {analysis.synergyTags.map((t, i) => (
-                          <div key={i} className="flex flex-col gap-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
-                                {SYNERGY_TAG_LABELS[t.tag]}
-                              </span>
-                              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE_COLORS[t.role]}`}>
-                                {t.role}
-                              </span>
-                            </div>
-                            <p className="pl-1 text-xs text-stone-500">↳ {t.reason}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <Separator />
-
-                {/* Score breakdown — always shown */}
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">Score breakdown</p>
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-stone-600">Base rating</span>
-                      <span className="font-semibold text-stone-800">{analysis.scoreBreakdown.baseRating.toFixed(2)}</span>
-                    </div>
-                    {analysis.scoreBreakdown.adjustments.map((adj, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm">
-                        <span className="text-stone-500">{adj.label}</span>
-                        <span className={adj.delta >= 0 ? "text-emerald-600" : "text-red-500"}>
-                          {adj.delta >= 0 ? "+" : ""}{adj.delta.toFixed(2)}
+                <section className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+                  <div className="rounded-[var(--radius-xl)] border border-border/70 bg-white/70 p-4 shadow-[var(--shadow-soft)]">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-muted-ink)]">
+                      Score breakdown
+                    </p>
+                    <div className="flex flex-col gap-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[var(--color-ink-soft)]">Base rating</span>
+                        <span className="font-semibold text-[var(--color-ink)]">
+                          {analysis.scoreBreakdown.baseRating.toFixed(2)}
                         </span>
                       </div>
-                    ))}
-                    <Separator className="my-1" />
-                    <div className="flex items-center justify-between text-sm font-bold">
-                      <span className="text-stone-800">Adjusted score</span>
-                      <span className="text-stone-900">{analysis.scoreBreakdown.total.toFixed(2)}</span>
+                      {analysis.scoreBreakdown.adjustments.map((adjustment) => (
+                        <div
+                          key={`${adjustment.label}-${adjustment.delta}`}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-[var(--color-ink-soft)]">{adjustment.label}</span>
+                          <span
+                            className={
+                              adjustment.delta >= 0
+                                ? "font-medium text-emerald-700"
+                                : "font-medium text-rose-600"
+                            }
+                          >
+                            {adjustment.delta >= 0 ? "+" : ""}
+                            {adjustment.delta.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                      <Separator className="my-1" />
+                      <div className="flex items-center justify-between font-semibold">
+                        <span className="text-[var(--color-ink)]">Adjusted score</span>
+                        <span className="text-[var(--color-ink)]">
+                          {analysis.scoreBreakdown.total.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Role flags — always shown */}
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">Role flags</p>
-                  <div className="flex flex-wrap gap-2">
-                    {analysis.roleFlags.map((flag) => (
-                      <span
-                        key={flag.label}
-                        title={flag.explanation}
-                        className={
-                          flag.active
-                            ? "rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-800"
-                            : "rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-400 line-through"
-                        }
-                      >
-                        {flag.label}
-                      </span>
-                    ))}
+                  <div className="rounded-[var(--radius-xl)] border border-border/70 bg-white/70 p-4 shadow-[var(--shadow-soft)]">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-muted-ink)]">
+                      Role flags
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {analysis.roleFlags.map((flag) => (
+                        <span
+                          key={flag.label}
+                          title={flag.explanation}
+                          className={
+                            flag.active
+                              ? "rounded-full bg-stone-200 px-2.5 py-1 text-xs font-medium text-stone-800"
+                              : "rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-400 line-through"
+                          }
+                        >
+                          {flag.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </section>
 
+                <section className="rounded-[var(--radius-xl)] border border-border/70 bg-white/70 p-4 shadow-[var(--shadow-soft)]">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-muted-ink)]">
+                    Synergy tags
+                  </p>
+                  {!analysis.scryfallCard ? (
+                    <p className="text-sm text-muted-foreground">
+                      Fetch card data to unlock synergy explanations for this card.
+                    </p>
+                  ) : analysis.synergyTags.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No synergy tags detected.</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {analysis.synergyTags.map((tag) => (
+                        <div key={`${tag.tag}-${tag.role}-${tag.reason}`} className="rounded-2xl border border-border/60 bg-[var(--color-paper-pane)] px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-black/6 px-2.5 py-1 text-xs font-medium text-[var(--color-ink)]">
+                              {SYNERGY_TAG_LABELS[tag.tag]}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${ROLE_BADGE_COLORS[tag.role]}`}
+                            >
+                              {tag.role}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">
+                            {tag.reason}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
             </ScrollArea>
           </>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
