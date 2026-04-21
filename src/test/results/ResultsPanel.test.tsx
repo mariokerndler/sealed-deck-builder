@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { ResultsPanel } from "@/components/results/ResultsPanel"
 
@@ -74,5 +74,19 @@ describe("ResultsPanel", () => {
     )
     expect(screen.getByText(/missing from the combined rating files/i)).toBeInTheDocument()
     expect(screen.getByText(/2 Some Card/i)).toBeInTheDocument()
+  })
+
+  it("persists width to localStorage when drag handle is used", () => {
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    render(<ResultsPanel {...baseProps} results={[mockDeck as any]} />)
+
+    const handle = screen.getByTestId("resize-handle")
+
+    fireEvent.mouseDown(handle, { clientX: 500 })
+    fireEvent(window, new MouseEvent("mousemove", { clientX: 440 }))
+    fireEvent(window, new MouseEvent("mouseup"))
+
+    expect(setItemSpy).toHaveBeenCalledWith("resultsPanelWidth", "420")
   })
 })

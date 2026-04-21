@@ -2,6 +2,7 @@ import { InfoIcon, WandSparklesIcon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { type RankedDeckResult } from "@/lib/mtg"
+import { useResizablePanel } from "@/hooks/useResizablePanel"
 import { ResultsList } from "./ResultsList"
 import { ResultsDetail } from "./ResultsDetail"
 
@@ -30,10 +31,19 @@ export function ResultsPanel({
   onAnalyzeCard,
   scryfallLoaded,
 }: ResultsPanelProps) {
+  const { width, handleMouseDown } = useResizablePanel("resultsPanelWidth", 360, 280, 600)
   const selectedDeck = results[selectedDeckIndex] ?? results[0]
 
   return (
-    <div className="flex w-[360px] shrink-0 flex-col overflow-hidden border-l border-[var(--color-paper-line)] bg-white">
+    <div
+      className="relative flex shrink-0 flex-col overflow-hidden border-l border-[var(--color-paper-line)] bg-white"
+      style={{ width }}
+    >
+      <div
+        data-testid="resize-handle"
+        onMouseDown={handleMouseDown}
+        className="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-col-resize hover:bg-black/10 active:bg-black/20"
+      />
       {missingCards.length > 0 ? (
         <Alert className="shrink-0 rounded-none border-x-0 border-t-0 border-stone-300 bg-stone-100 py-2">
           <InfoIcon className="size-3.5" />
